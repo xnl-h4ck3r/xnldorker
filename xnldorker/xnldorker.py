@@ -157,7 +157,7 @@ async def getDuckDuckGo(browser, dork, semaphore):
                 writerr(colored(f'[ Google ] reCAPTCHA needs responding to. Process will resume in {arg.antibot_timeout} seconds...','yellow')) 
                 await asyncio.sleep(args.antibot_timeout)
             else:
-                writerr(colored('[ Google ] reCAPTCHA needed responding to. Consider using option -vb / --view-browser','red'))
+                writerr(colored('[ Google ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                 return set(endpoints)
             
         # Function to check if the button is disabled and enable it if necessary
@@ -337,7 +337,7 @@ async def getStartpage(browser, dork, semaphore):
                 writerr(colored(f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds...','yellow')) 
                 await asyncio.sleep(args.antibot_timeout)
             else:
-                writerr(colored('[ Startpage ] CAPTCHA needed responding to. Consider using option -vb / --view-browser','red'))
+                writerr(colored('[ Startpage ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                 return set(endpoints)
                 
         await page.fill('input[title="Search"]', dork)
@@ -373,7 +373,7 @@ async def getStartpage(browser, dork, semaphore):
                     writerr(colored(f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds...','yellow')) 
                     await asyncio.sleep(args.antibot_timeout)
                 else:
-                    writerr(colored('[ Startpage ] CAPTCHA needed responding to. Consider using option -vb / --view-browser','red'))
+                    writerr(colored('[ Startpage ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                     return set(endpoints)
             
             # Locate all forms with action="/sp/search" on the page
@@ -602,7 +602,7 @@ async def getGoogle(browser, dork, semaphore):
                 writerr(colored(f'[ Google ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds...','yellow')) 
                 await asyncio.sleep(args.antibot_timeout)
             else:
-                writerr(colored('[ Google ] reCAPTCHA needed responding to. Consider using option -vb / --view-browser','red'))
+                writerr(colored('[ Google ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                 return set(endpoints)
         
         # If the cookies notice is shown, accept it
