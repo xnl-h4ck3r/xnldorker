@@ -24,7 +24,7 @@ except:
     pass
 
 # Available sources to search
-SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google']
+SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google', 'yandex']
 
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
@@ -39,6 +39,7 @@ bingEndpoints = set()
 yahooEndpoints = set()
 googleEndpoints = set()
 startpageEndpoints = set()
+yandexEndpoints = set()
 allSubs = set()
 sourcesToProcess = []
 
@@ -68,7 +69,7 @@ def showVersion():
             resp = requests.get('https://raw.githubusercontent.com/xnl-h4ck3r/xnldorker/main/xnldorker/__init__.py',timeout=3)
         except:
             write('Current xnldorker version '+__version__+' (unable to check if latest)\n')
-        if __version__ == resp.text.split('=')[1].replace('"',''):
+        if __version__ == resp.text.split('=')[1].replace('"','').strip():
             write('Current xnldorker version '+__version__+' ('+colored('latest','green')+')\n')
         else:
             write('Current xnldorker version '+__version__+' ('+colored('outdated','red')+')\n')
@@ -114,7 +115,28 @@ def getSubdomain(url):
         return tldExtract.subdomain
     except Exception as e:
         writerr(colored('ERROR getSubdomain 1: ' + str(e), 'red')) 
-        
+
+async def wait_for_word_or_sleep(word, timeout):
+    """
+    Called when an antibot screen is detected on a source. It will resume again when the timeout is reached, or if the passed word is typed and ENTER pressed
+    """
+    loop = asyncio.get_event_loop()
+    word_entered = asyncio.Event()
+
+    def on_input_received():
+        input_text = sys.stdin.readline().strip()
+        if input_text == word:
+            word_entered.set()
+
+    loop.add_reader(sys.stdin.fileno(), on_input_received)
+
+    try:
+        await asyncio.wait_for(word_entered.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        pass  # Timeout reached, continue with the script
+    finally:
+        loop.remove_reader(sys.stdin.fileno())
+              
 async def getResultsDuckDuckGo(page, endpoints):
     global allSubs
     try:
@@ -154,12 +176,24 @@ async def getDuckDuckGo(browser, dork, semaphore):
         captcha = await page.query_selector('#anomaly-modal__modal.anomaly-modal__modal')
         if captcha:
             if args.show_browser:
-                writerr(colored(f'[ Google ] reCAPTCHA needs responding to. Process will resume in {arg.antibot_timeout} seconds...','yellow')) 
-                await asyncio.sleep(args.antibot_timeout)
+                writerr(colored(f'[ DuckDuckGo ] reCAPTCHA needs responding to. Process will resume in {arg.antibot_timeout} seconds, or when you type "duckduckgo" and press ENTER...','yellow')) 
+                await wait_for_word_or_sleep("duckduckgo", args.antibot_timeout)
+                writerr(colored(f'[ DuckDuckGo ] Resuming...', 'green'))
             else:
-                writerr(colored('[ Google ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                writerr(colored('[ DuckDuckGo ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                 return set(endpoints)
-            
+        
+        try:
+            # Wait for the search results to be fully loaded and have links
+            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+        except:
+            pass
+
+        captcha = await page.query_selector('#anomaly-modal__modal.anomaly-modal__modal')
+        if captcha:
+            writerr(colored('[ DuckDuckGo ] Failed to complete reCAPTCHA','red'))
+            return set(endpoints)
+               
         # Function to check if the button is disabled and enable it if necessary
         async def enable_more_results():
             more_results_button = await page.query_selector('#more-results')
@@ -331,15 +365,30 @@ async def getStartpage(browser, dork, semaphore):
             
         await page.goto(f'https://www.startpage.com/', timeout=args.timeout*1000)
         
+        # Wait for the search results to be fully loaded
+        await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+        
         # Check if bot detection is shown
         if '/sp/captcha' in page.url:
             if args.show_browser:
-                writerr(colored(f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds...','yellow')) 
-                await asyncio.sleep(args.antibot_timeout)
+                writerr(colored(f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "startpage" and press ENTER...','yellow')) 
+                await wait_for_word_or_sleep("startpage", args.antibot_timeout)
+                writerr(colored(f'[ Startpage ] Resuming...', 'green'))
             else:
                 writerr(colored('[ Startpage ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                 return set(endpoints)
-                
+
+        try:
+            # Wait for the search results to be fully loaded and have links
+            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+        except:
+            pass
+
+        # Check if bot detection is still shown
+        if '/sp/captcha' in page.url:
+            writerr(colored('[ Startpage ] Failed to complete CAPTCHA','red'))
+            return set(endpoints)
+        
         await page.fill('input[title="Search"]', dork)
         await page.click('button.search-btn')
         
@@ -370,12 +419,24 @@ async def getStartpage(browser, dork, semaphore):
             # Check if bot detection is shown
             if '/sp/captcha' in page.url:
                 if args.show_browser:
-                    writerr(colored(f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds...','yellow')) 
-                    await asyncio.sleep(args.antibot_timeout)
+                    writerr(colored(f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "startpage" and press ENTER...','yellow')) 
+                    await wait_for_word_or_sleep("startpage", args.antibot_timeout)
+                    writerr(colored(f'[ Startpage ] Resuming...', 'green'))
                 else:
                     writerr(colored('[ Startpage ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                     return set(endpoints)
             
+            try:
+                # Wait for the search results to be fully loaded and have links
+                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+            except:
+                pass
+
+            # Check if bot detection is still shown
+            if '/sp/captcha' in page.url:
+                writerr(colored('[ Startpage ] Failed to complete CAPTCHA','red'))
+                return set(endpoints)
+        
             # Locate all forms with action="/sp/search" on the page
             forms = await page.query_selector_all('form[action="/sp/search"]')
             last_form = forms[-1]  # Get the last form
@@ -599,11 +660,24 @@ async def getGoogle(browser, dork, semaphore):
         captcha = await page.query_selector('form#captcha-form')
         if captcha:
             if args.show_browser:
-                writerr(colored(f'[ Google ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds...','yellow')) 
-                await asyncio.sleep(args.antibot_timeout)
+                writerr(colored(f'[ Google ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "google" and press ENTER...','yellow')) 
+                await wait_for_word_or_sleep("google", args.antibot_timeout)
+                writerr(colored(f'[ Google ] Resuming...', 'green'))
             else:
                 writerr(colored('[ Google ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                 return set(endpoints)
+        
+        try:
+            # Wait for the search results to be fully loaded and have links
+            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+        except:
+            pass
+
+        # Check if bot detection is still shown
+        captcha = await page.query_selector('form#captcha-form')
+        if captcha:
+            writerr(colored('[ Google ] Failed to complete reCAPTCHA','red'))
+            return set(endpoints)
         
         # If the cookies notice is shown, accept it
         cookieAccept = await page.query_selector('button:has-text("Accept all")')
@@ -679,6 +753,143 @@ async def getGoogle(browser, dork, semaphore):
         except:
             pass
 
+def extractYandexEndpoints(soup):
+    global allSubs
+    try:
+        endpoints = []
+        result_links = soup.find_all('a', class_=re.compile('.*organic__url.*'))
+        for link in result_links:
+            href = link.get('href')
+            if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*yandex\.[^\/\.]{2,}', href):
+                endpoints.append(href.strip())
+                # If the same search is going to be resubmitted without subs, get the subdomain
+                if args.resubmit_without_subs:
+                    allSubs.add(getSubdomain(href.strip()))
+        return endpoints
+    except Exception as e:
+        writerr(colored('ERROR extractYandexEndpoints 1: ' + str(e), 'red')) 
+        
+async def getYandex(browser, dork, semaphore):
+    try:
+        endpoints = []
+        page = None
+        await semaphore.acquire()
+        # Set the gdpr cookie to reduce the chances of getting Captcha page a bit
+        context = await browser.new_context(
+            storage_state={
+                'cookies': [{
+                    'name': 'gdpr',
+                    'value': '0',
+                    'domain': '.yandex.com',
+                    'path': '/'
+                }]
+            }
+        )
+        page = await context.new_page()
+    
+        if verbose():
+            writerr(colored('[ Yandex ] Starting...', 'green'))
+        
+        await page.goto(f'https://yandex.com/search/?text={dork}', timeout=args.timeout*1000)
+    
+        # Check if bot detection is shown
+        if '/showcaptcha' in page.url:
+            if args.show_browser:
+                writerr(colored(f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...','yellow')) 
+                await wait_for_word_or_sleep("yandex", args.antibot_timeout)
+                writerr(colored(f'[ Yandex ] Resuming...', 'green'))
+            else:
+                writerr(colored('[ Yandex ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                return set(endpoints)
+        try:
+            await page.wait_for_load_state('networkidle', timeout=1000)
+        except:
+            pass
+
+        # If still on Captcha page, then exit
+        if '/showcaptcha' in page.url:
+            writerr(colored('[ Yandex ] Failed to complete CAPTCHA','red'))
+            return set(endpoints)
+        
+        # Collect endpoints from the initial page
+        if vverbose():
+            writerr(colored('[ Yandex ] Getting endpoints from page 1', 'green', attrs=['dark'])) 
+        content = await page.content()
+        soup = BeautifulSoup(content, 'html.parser')
+        pageNo = 1
+        endpoints = extractYandexEndpoints(soup)
+
+        # Loop until there is no submit button in the last form with action="/sp/search"
+        while True:
+            if stopProgram:
+                break
+
+            # Click the Next button
+            await page.click('a[aria-label="Next page"]')
+            pageNo += 1
+            
+            # Check if bot detection is shown
+            if '/showcaptcha' in page.url:
+                if args.show_browser:
+                    writerr(colored(f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...','yellow')) 
+                    await wait_for_word_or_sleep("yandex", args.antibot_timeout)
+                    writerr(colored(f'[ Yandex ] Resuming...', 'green'))
+                else:
+                    writerr(colored('[ Yandex ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                    return set(endpoints)
+
+            try:
+                # Wait for the search results to be fully loaded and have links
+                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+            except:
+                pass
+
+            # If still on Captcha page, then exit
+            if '/showcaptcha' in page.url:
+                writerr(colored('[ Yandex ] Failed to complete CAPTCHA','red'))
+                return set(endpoints)
+
+            # Check if any classes containing organic__url exist
+            try:
+                await page.wait_for_selector('.organic__url', timeout=1000)
+            except:
+                break  # Break the loop if no '.organic__url' found
+        
+            if vverbose():
+                writerr(colored('[ Yandex ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
+            
+            # Collect endpoints from the current page
+            content = await page.content()
+            soup = BeautifulSoup(content, 'html.parser')
+            endpoints += extractYandexEndpoints(soup)
+
+        await page.close()
+
+        setEndpoints = set(endpoints)
+        if verbose():
+            noOfEndpoints = len(setEndpoints)
+            writerr(colored(f'[ Yandex ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+        return setEndpoints
+    
+    except Exception as e:
+        noOfEndpoints  = len(set(endpoints))
+        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
+            writerr(colored(f'[ Yandex ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
+        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
+            writerr(colored(f'[ Yandex ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+        else:
+            writerr(colored('[ Yandex ] ERROR getYandex1: ' + str(e), 'red')) 
+        # If debug mode then save a copy of the page
+        if args.debug and page is not None:
+            await savePageContents('Yandex',page)
+        return set(endpoints)
+    finally:
+        try:
+            await page.close()
+            semaphore.release()
+        except:
+            pass
+        
 async def savePageContents(source, page):
     try:
         # Press the "Escape" key to stop page loading
@@ -700,7 +911,7 @@ async def savePageContents(source, page):
         writerr(colored(f'[ {source} ] Unable to save page contents: {str(e)}', 'cyan')) 
 
 async def processInput(dork):
-    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints
+    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints
     try:
         
         # Create a single browser instance
@@ -722,7 +933,7 @@ async def processInput(dork):
             # Define a list to hold the sources included in the gather call
             includedSources = []
             
-            # Check and add coroutines for DuckDuckGo and Bing if required
+            # Check and add coroutines for any required sources
             try:
                 if 'duckduckgo' in sourcesToProcess:
                     includedSources.append(getDuckDuckGo(browser, dork, semaphore))
@@ -734,22 +945,13 @@ async def processInput(dork):
                     includedSources.append(getYahoo(browser, dork, semaphore))
                 if 'google' in sourcesToProcess:
                     includedSources.append(getGoogle(browser, dork, semaphore))
+                if 'yandex' in sourcesToProcess:
+                    includedSources.append(getYandex(browser, dork, semaphore))
             except:
                 pass
             
             # Run all searches concurrently using the same browser instance
             results = await asyncio.gather(*includedSources)
-            
-            # Populate the results dictionary
-            #for source, result in zip(sourcesToProcess, results):
-            #    resultsDict[source] = result
-            
-            # Access the results using the source names
-            #duckduckgoEndpoints = resultsDict.get('duckduckgo', [])
-            #bingEndpoints = resultsDict.get('bing', [])
-            #startpageEndpoints = resultsDict.get('startpage', [])
-            #yahooEndpoints = resultsDict.get('yahoo', [])
-            #googleEndpoints = resultsDict.get('google', [])
             
             # Populate the results dictionary and endpoint lists
             for source, result in zip(sourcesToProcess, results):
@@ -770,6 +972,8 @@ async def processInput(dork):
                     yahooEndpoints.update(result)
                 elif source == 'google':
                     googleEndpoints.update(result)
+                elif source == 'yandex':
+                    yandexEndpoints.update(result)
         
             # Close the browser instance once all searches are done
             try:
@@ -786,7 +990,7 @@ async def processInput(dork):
             pass
     
 async def processOutput():
-    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, sourcesToProcess
+    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, sourcesToProcess
     try:
         allEndpoints = set()
 
@@ -802,6 +1006,8 @@ async def processOutput():
                 allEndpoints.update(f'[ Yahoo ] {endpoint}' for endpoint in yahooEndpoints)
             if googleEndpoints:
                 allEndpoints.update(f'[ Google ] {endpoint}' for endpoint in googleEndpoints)
+            if yandexEndpoints:
+                allEndpoints.update(f'[ Yandex ] {endpoint}' for endpoint in yandexEndpoints)
         else:
             if duckduckgoEndpoints:
                 allEndpoints |= duckduckgoEndpoints
@@ -813,6 +1019,8 @@ async def processOutput():
                 allEndpoints |= yahooEndpoints
             if googleEndpoints:
                 allEndpoints |= googleEndpoints
+            if yandexEndpoints:
+                allEndpoints |= yandexEndpoints
 
         if verbose() and sys.stdin.isatty():
             writerr(colored('\nTotal endpoints found: '+str(len(allEndpoints))+' 🤘  ', 'cyan')+str(sourcesToProcess))
@@ -989,7 +1197,7 @@ async def run_main():
         action='store_true',
         help='View the browser instead of using headless browser.',
     )
-    default_abt = 30
+    default_abt = 90
     parser.add_argument(
         "-abt",
         "--antibot-timeout",
@@ -1059,8 +1267,8 @@ async def run_main():
         # Process the input given on -i (--input), or <stdin>
         await processInput(inputDork)
 
-        # Process the input given on -i (--input), or <stdin>
-        if args.resubmit_without_subs:
+        # If there were some subs found, and the --resubmit-without-subs was passed, then run again with subdomains removed
+        if len(allSubs) > 0 and args.resubmit_without_subs:
             inputDork = inputDork + ' ' + ' '.join(['-{}'.format(sub) for sub in allSubs if sub])
             write(colored('\nResubmitting again for input: ', 'magenta')+colored(inputDork,'white'))
             await processInput(inputDork)

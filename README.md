@@ -1,11 +1,11 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v1.0
+## About - v1.1
 
 This is a tool used to run a dork on different search sites.
-The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google**
+The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex**
 
-**IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` argument to specify the appropriate sources.**
+**IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` (and/or `--exclude-source`) argument to specify the appropriate sources.**
 
 **WARNING: If you use this tool a lot, then I guess there is the potential to get blocked on these source sites, so use sensibly. Using a VPN will help.**
 
@@ -53,7 +53,7 @@ pipx install git+https://github.com/xnl-h4ck3r/xnldorker.git
 | -ls      | --list-sources       | List all available sources.                                                                                                                                                                                                                       |
 | -t       | --timeout            | How many seconds to wait for the source to respond (default: 30 seconds)                                                                                                                                                                          |
 | -sb      | --show-browser       | View the browser instead of using a headless browser. This has an advantage because if there is a known anti-bot mechanism, then it will pause for a set time (determined by `-abt`) so you can manually resolve it before `xnldorker` continues. |
-| -abt     | --antibot-timeout    | How many seconds to wait when the `-sb` option was used and a known anti-bot mechanism is encountered (default: 30). This is the time you have to manually respond to the anti-bot mechanism before it tries to continue.                         |
+| -abt     | --antibot-timeout    | How many seconds to wait when the `-sb` option was used and a known anti-bot mechanism is encountered (default: 90). This is the time you have to manually respond to the anti-bot mechanism before it tries to continue.                         |
 |          | --debug              | Save page contents on error.                                                                                                                                                                                                                      |
 | -nb      | --no-banner          | Hides the tool banner (it is hidden by default if you pipe input to 'xnldorker') output.                                                                                                                                                          |
 |          | --version            | Show current version number.                                                                                                                                                                                                                      |
@@ -91,14 +91,15 @@ The output can also be piped to another command.
 ## Recommendations
 
 - Using `-v`/`--verbose` is always a good idea when you first start using a tool. It will help you understand what the tool is doing and highlight any potential problems too.
-- If you do mpt need to run silently in the background, I would recommend using the `-sb`/`--show-browser` option because you can see what `xnldorker` is doing (and if it seems to be working ok), plus if there is any known ant-bot detection recognised (currently not for all sources) then you will be notified and have the option to resolve this before `xnldorker` continues.
+- If you do not need to run silently in the background, **I would recommend using the `-sb`/`--show-browser` argument** because you can see what `xnldorker` is doing (and if it seems to be working ok), plus if there is any known ant-bot detection recognised (currently not for all sources) then you will be notified and have the option to resolve this before `xnldorker` continues.
+- If you show the browsers and you get an anti-bot page shown, the process will be paused and wait for the number of seconds specified by `-abt`/`--antobit_timeout` (default 90 seconds). However, it you manually respond to the check and want it to resume quicker, you can enter the name of the source (in lowercase) and press ENTER to resume again.
 - The number of concurrent sources processed defaults to 2. This can be changed with `-cs`/`--concurrent-sources`. If you are running `xnldorker` on a low spec VPS, it could be worth setting `-cs 1`. The higher the value of `-cs` the quicker the tool will be, but may affect the quality and quantity of results.
 - You may want to run different dorks but write to the same output file. If you use the same output file in `-o`/`--output` then any results will be appended to that file automatically (and de-duplicated). But if you want to overwrite it every time, you can use the `-ow`/`--overwrite-output` argument.
 - Use the `--resubmit-without-subs` option to resubmit the same search, but with all previously found subs removed from the search (where possible, dependant on the source).
 - If I was looking at a new target, `example.com` I would start with running the command below. I would use `-v` to have more insight into what is happening, `-sb` to show the browsers so that I could respond to ant-bot mechanism if shown, `-rwos` to resubmit the same search but excluding the subdomains found in the first search, and `-o` to specify the output file to save the results:
 
 ```sh
-xnldorker -i "example.com" -v -sb -rwos -o example.com_xnldorker.txt
+xnldorker -i "example.com" -v -t 120 -sb -rwos -o example.com_xnldorker.txt
 ```
 
 - After the previous point, I would consider changing my VPN to s different region and re-run to potentially get different results.
