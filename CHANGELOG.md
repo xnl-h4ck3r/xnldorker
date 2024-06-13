@@ -1,5 +1,12 @@
 ## Changelog
 
+- v1.2
+
+  - Changed
+
+    - The regex to check whether to prefix the input with `site:` is incorrect. THis has been fixed and improved.
+    - Add `dist/` to `.gitignore`.
+
 - v1.1
 
   - New

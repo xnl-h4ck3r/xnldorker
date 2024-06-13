@@ -1253,7 +1253,7 @@ async def run_main():
             inputDork = sys.stdin.readline().strip()
         
         # If the input value doesn't seem to start with an advanced search operator and has no spaces, assume it is a domain only and prefix with "site:"
-        if not re.match(r'^[a-z]:', inputDork) and ' ' not in inputDork:
+        if not re.match(r'(^|\s)[a-z]*:', inputDork, re.IGNORECASE) and ' ' not in inputDork:
             inputDork = 'site:'+inputDork
             
         # If input is not piped, show the banner, and if --verbose option was chosen show options and config values
