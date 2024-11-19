@@ -17,6 +17,7 @@ from pathlib import Path
 import asyncio
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
+from urllib3.exceptions import InsecureRequestWarning
 import tldextract
 try:
     from . import __version__
@@ -27,6 +28,27 @@ except:
 SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google', 'yandex']
 
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+# Uer Agents
+UA_DESKTOP = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246",
+    "Mozilla/5.0 (X11; CrOS x86_64 8172.45.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.64 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_2) AppleWebKit/601.3.9 (KHTML, like Gecko) Version/9.0.2 Safari/601.3.9",
+    "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.111 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.84 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.75 Safari/537.36 Edg/99.0.1150.36",
+    "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko",
+    "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.75 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:99.0) Gecko/20100101 Firefox/99.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:105.0) Gecko/20100101 Firefox/105.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 12.6; rv:105.0) Gecko/20100101 Firefox/105.0",
+    "Mozilla/5.0 (X11; Linux i686; rv:105.0) Gecko/20100101 Firefox/105.0",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:105.0) Gecko/20100101 Firefox/105.0",
+    "Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:105.0) Gecko/20100101 Firefox/105.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
+    "Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0) like Gecko"
+]
 
 # Global variables
 args = None
@@ -651,7 +673,8 @@ async def getGoogle(browser, dork, semaphore):
         #  tbs=li:1 - Verbatim search
         #  hl=en - English language
         #  filter=0 - Show near duplicate content
-        await page.goto(f'https://www.google.com/search?tbs=li:1&hl=en&filter=0&q={dork}', timeout=args.timeout*1000)
+        #  num=100 - Show upto 100 results per page
+        await page.goto(f'https://www.google.com/search?tbs=li:1&hl=en&filter=0&num=100&q={dork}', timeout=args.timeout*1000)
         await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
         
         pageNo = 1
@@ -688,46 +711,31 @@ async def getGoogle(browser, dork, semaphore):
         locationSpecific = await page.query_selector('g-raised-button:has-text("Not now")')
         if locationSpecific:
             await locationSpecific.click()
-            
-        # Scroll to the bottom of the page
-        attempts = 0
-        max_attempts = 5
-        while attempts < max_attempts:
-            if stopProgram:
-                break
-            if await page.query_selector('button[aria-label="More results"]'):
-                break
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(1000)
-            attempts += 1
-            
-        # Function to check for the presence of the button and click it if available
-        async def click_more_results():
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            if await page.query_selector('a[aria-label="More results"]'):
-                await page.click('a[aria-label="More results"]')
-
-                await page.wait_for_timeout(1000)
-                
-        # Loop to repeatedly check for the button and click it until it doesn't exist
-        while await page.query_selector('a[aria-label="More results"]'):
-            if stopProgram:
-                break
-            
-            more_results_button = await page.query_selector('a[aria-label="More results"]')
-            is_hidden = await page.evaluate('(button) => button.style.transform === "scale(0)"', more_results_button)
-            if not is_hidden:
-                if vverbose():
-                    pageNo += 1
-                    writerr(colored('[ Google ] Clicking "More Results" button to display page '+str(pageNo), 'green', attrs=['dark'])) 
-                await click_more_results()
-                # Get the results so far
-                endpoints = await getResultsGoogle(page, endpoints)
-            else:
-                break
-        
-        # Get all the results
+    
+        # Collect endpoints from the initial page
         endpoints = await getResultsGoogle(page, endpoints)
+
+        # Main loop to keep navigating to next pages until there's no "Next page" link
+        while True:
+            if stopProgram:
+                break
+            # Find the "Next" button
+            next_button = await page.query_selector('#pnnext')
+            if next_button:
+                await next_button.click()
+                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+                pageNo += 1
+                if vverbose():
+                    writerr(colored('[ Google ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
+                
+                # Collect endpoints from the current page
+                endpoints += await getResultsGoogle(page, endpoints)
+            else:
+                # No "Next" button found, exit the loop
+                break
+
+        await page.close()
+
         setEndpoints = set(endpoints)
         if verbose():
             noOfEndpoints = len(setEndpoints)
@@ -1052,16 +1060,46 @@ async def processOutput():
             except Exception as e:
                 if vverbose():
                     writerr(colored("ERROR processOutput 2: " + str(e), "red"))    
-                
+        
+        # Initialize reusable session object for sending requests to the proxy
+        sendToProxy = False
+        if args.proxy:
+            proxies = {
+                        "http": args.proxy,
+                        "https": args.proxy,
+                    }
+            requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
+            sendToProxy = True
+            
         # Output all endpoints
         for endpoint in allEndpoints:
-            # If an output file was specified, write to the file
-            if args.output is not None:
-                outFile.write(endpoint + '\n')
-            else:    
-                # If output is piped or the --output argument was not specified, output to STDOUT
-                if not sys.stdin.isatty() or args.output is None:
-                    write(endpoint,True)
+            try:
+                # If an output file was specified, write to the file
+                if args.output is not None:
+                    outFile.write(endpoint + '\n')
+                else:    
+                    # If output is piped or the --output argument was not specified, output to STDOUT
+                    if not sys.stdin.isatty() or args.output is None:
+                        write(endpoint,True)
+            except Exception as e:
+                writerr(colored('ERROR processOutput 6: Could not output links found - ' + str(e), 'red'))
+                    
+            # If the -proxy argument is passed, send the link to the specified proxy
+            if sendToProxy:
+                try:
+                    # Make the request
+                    resp = requests.get(
+                        endpoint,
+                        allow_redirects=True,
+                        verify=False,
+                        proxies=proxies,
+                        headers = {"User-Agent": "xnldorker by @xnl-h4ck3r"},
+                    )
+                    
+                except Exception as e:
+                    writerr(colored(f"[ Proxy ] Failed to send {endpoint} to proxy: {str(e)}", "red"))
+                    writerr(colored(f"[ Proxy ] Proxy disabled. Check value {args.proxy} is correct.", "red"))
+                    sendToProxy = False
             
         # Close the output file if it was opened
         try:
@@ -1099,6 +1137,8 @@ def showOptionsAndConfig():
         write(colored('-t: ' + str(args.timeout), 'magenta')+colored(' The browser timeout in seconds','white'))
         write(colored('-sb: ' + str(args.show_browser), 'magenta')+colored(' Whether the browser will be shown. If False, then headless mode is used.','white'))
         write(colored('-rwos: ' + str(args.resubmit_without_subs), 'magenta')+colored(' Whether the query will be resubmitted, but excluding the sub domains found in the first search.','white'))
+        if args.proxy:
+            write(colored('-proxy: ' + str(args.proxy), 'magenta')+colored(' The proxy to send found links to.','white'))
         write(colored('Sources being checked: ', 'magenta')+str(sourcesToProcess))
         write('')
         
@@ -1211,6 +1251,12 @@ async def run_main():
         '--resubmit-without-subs',
         action='store_true',
         help='After the initial search, search again but exclude all subs found previously to get more links.',
+    )
+    parser.add_argument(
+        "-proxy",
+        action="store",
+        help="Send the links found to a proxy, e.g http://127.0.0.1:8080",
+        default="",
     )
     parser.add_argument('--debug', action='store_true', help='Save page contents on error.')
     parser.add_argument('-nb', '--no-banner', action='store_true', help='Hides the tool banner.')

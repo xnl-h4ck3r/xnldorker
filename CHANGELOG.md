@@ -1,5 +1,16 @@
 ## Changelog
 
+- v1.3
+
+  - New
+
+    - Add `-proxy` argument. This can be used to send the links found to a proxy, e.g. `http://127.0.0.1:8080`
+    - When initially requesting Google, use query parameter `num=100` to show as many links on one page as possible.
+
+  - Changed
+
+    - Google have changed their site so it no longer had the `More Results` link that keeps showing the links on the page. They have returned to the `Next` button being displayed. The code will be changed to click the button each time and get links from each page.
+
 - v1.2
 
   - Changed

@@ -1,6 +1,6 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v1.2
+## About - v1.3
 
 This is a tool used to run a dork on different search sites.
 The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex**
@@ -54,6 +54,7 @@ pipx install git+https://github.com/xnl-h4ck3r/xnldorker.git
 | -t       | --timeout            | How many seconds to wait for the source to respond (default: 30 seconds)                                                                                                                                                                          |
 | -sb      | --show-browser       | View the browser instead of using a headless browser. This has an advantage because if there is a known anti-bot mechanism, then it will pause for a set time (determined by `-abt`) so you can manually resolve it before `xnldorker` continues. |
 | -abt     | --antibot-timeout    | How many seconds to wait when the `-sb` option was used and a known anti-bot mechanism is encountered (default: 90). This is the time you have to manually respond to the anti-bot mechanism before it tries to continue.                         |
+| -proxy   |                      | Send the links found to a proxy, e.g `http://127.0.0.1:8080`.                                                                                                                                                                                     |
 |          | --debug              | Save page contents on error.                                                                                                                                                                                                                      |
 | -nb      | --no-banner          | Hides the tool banner (it is hidden by default if you pipe input to 'xnldorker') output.                                                                                                                                                          |
 |          | --version            | Show current version number.                                                                                                                                                                                                                      |

@@ -11,7 +11,7 @@ setup(
     author="@xnl-h4ck3r",
     url="https://github.com/xnl-h4ck3r/xnldorker",
     zip_safe=False,
-    install_requires=["termcolor", "requests", "asyncio", "beautifulsoup4", "playwright", "tldextract"],
+    install_requires=["termcolor", "requests", "asyncio", "beautifulsoup4", "playwright", "tldextract", "urllib3"],
     entry_points={
         'console_scripts': [
             'xnldorker = xnldorker.xnldorker:main',
