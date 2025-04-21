@@ -1,5 +1,11 @@
 ## Changelog
 
+- v1.4
+
+  - Changed
+
+    - BUG FIX: Bing changed, so stopped working because it failed to click the "Next page" link. The reference to the link had gone stale by the time it was clicked, so the code will now fetch again just before clicking.
+
 - v1.3
 
   - New

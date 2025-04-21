@@ -1,6 +1,6 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v1.3
+## About - v1.4
 
 This is a tool used to run a dork on different search sites.
 The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex**

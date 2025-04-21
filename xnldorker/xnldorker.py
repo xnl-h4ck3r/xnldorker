@@ -316,9 +316,8 @@ async def getBing(browser, dork, semaphore):
             if stopProgram:
                 break
             # Find the link with the title "Next page"
-            next_page_link = await page.query_selector('a[title="Next page"]')
-            if next_page_link:
-                await next_page_link.click()
+            if await page.query_selector('a[title="Next page"]'):
+                await page.click('a[title="Next page"]')
                 await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
                 pageNo += 1
                 if vverbose():
