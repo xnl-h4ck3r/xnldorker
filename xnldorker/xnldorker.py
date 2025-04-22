@@ -28,6 +28,7 @@ except:
 SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google', 'yandex']
 
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
 
 # Uer Agents
 UA_DESKTOP = [
@@ -718,17 +719,21 @@ async def getGoogle(browser, dork, semaphore):
         while True:
             if stopProgram:
                 break
-            # Find the "Next" button
+            # Get href from the Next button
             next_button = await page.query_selector('#pnnext')
             if next_button:
-                await next_button.click()
-                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-                pageNo += 1
-                if vverbose():
-                    writerr(colored('[ Google ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
-                
-                # Collect endpoints from the current page
-                endpoints += await getResultsGoogle(page, endpoints)
+                next_href = await next_button.get_attribute('href')
+                if next_href:
+                    next_url = 'https://www.google.com' + next_href
+                    await page.goto(next_url, timeout=args.timeout * 1000)
+                    await page.wait_for_load_state('domcontentloaded', timeout=args.timeout * 1000)
+
+                    pageNo += 1
+                    if vverbose():
+                        writerr(colored('[ Google ] Getting endpoints from page ' + str(pageNo), 'green', attrs=['dark']))
+                    
+                    # Collect endpoints from the current page
+                    endpoints += await getResultsGoogle(page, endpoints)
             else:
                 # No "Next" button found, exit the loop
                 break

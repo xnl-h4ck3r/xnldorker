@@ -1,5 +1,11 @@
 ## Changelog
 
+- v1.5
+
+  - Changed
+
+    - BUG FIX: Google changed, so stopped working because it failed to click the "Next page" link. Changed to get the `href` instead and navigate to the next page via URL instead.
+
 - v1.4
 
   - Changed
