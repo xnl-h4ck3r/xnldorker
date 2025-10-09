@@ -1,6 +1,6 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v1.6
+## About - v1.7
 
 This is a tool used to run a dork on different search sites.
 The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex**
@@ -121,7 +121,7 @@ If you use the `--debug` option, then `xnldorker` will try to write a html file 
 
 ## TODO
 
-- Add more sources.
+- Add more sources, e.g. baidu, ecosia.
 - Identify anti bot mechanism pages on other sources (it's only on a few at the moment) so that `xnldorker` can pause to manually respond if the browser is being viewed.
 - Find our what search operators work on which sources and adjust the `--sources` automatically depending on which sources will get the expected results.
 - Add arguments that let you specify a certain time-frame for results which can often be specified with query parameters in the search engine request.

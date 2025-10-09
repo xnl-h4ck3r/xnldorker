@@ -199,7 +199,7 @@ async def getDuckDuckGo(browser, dork, semaphore):
         captcha = await page.query_selector('#anomaly-modal__modal.anomaly-modal__modal')
         if captcha:
             if args.show_browser:
-                writerr(colored(f'[ DuckDuckGo ] reCAPTCHA needs responding to. Process will resume in {arg.antibot_timeout} seconds, or when you type "duckduckgo" and press ENTER...','yellow')) 
+                writerr(colored(f'[ DuckDuckGo ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "duckduckgo" and press ENTER...','yellow')) 
                 await wait_for_word_or_sleep("duckduckgo", args.antibot_timeout)
                 writerr(colored(f'[ DuckDuckGo ] Resuming...', 'green'))
             else:
@@ -301,6 +301,17 @@ async def getBing(browser, dork, semaphore):
             
         await page.goto(f'https://www.bing.com/search?q={dork}', timeout=args.timeout*1000)
 
+        # If captcha is shown then allow time to submit it
+        content = await page.content()
+        if "One last step" in content:
+            if args.show_browser:
+                writerr(colored(f'[ Bing ] Cloudflare Captcha needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "bing" and press ENTER...','yellow')) 
+                await wait_for_word_or_sleep("bing", args.antibot_timeout)
+                writerr(colored(f'[ Bing ] Resuming...', 'green'))
+            else:
+                writerr(colored('[ Bing ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                return set(endpoints)
+            
         # Check if the cookie banner exists and click reject if it does
         if await page.query_selector('#bnp_btn_reject'):
             # Click the button to reject
@@ -673,8 +684,7 @@ async def getGoogle(browser, dork, semaphore):
         #  tbs=li:1 - Verbatim search
         #  hl=en - English language
         #  filter=0 - Show near duplicate content
-        #  num=100 - Show upto 100 results per page
-        await page.goto(f'https://www.google.com/search?tbs=li:1&hl=en&filter=0&num=100&q={dork}', timeout=args.timeout*1000)
+        await page.goto(f'https://www.google.com/search?tbs=li:1&hl=en&filter=0&q={dork}', timeout=args.timeout*1000)
         await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
         
         pageNo = 1
@@ -929,9 +939,10 @@ async def processInput(dork):
         # Create a single browser instance
         async with async_playwright() as p:
             if args.show_browser:
-                browser = await p.chromium.launch(headless=False)
+                browser = await p.firefox.launch(headless=False)
+                #browser = await p.chromium.launch(headless=False)
             else:
-                browser = await p.chromium.launch()
+                browser = await p.firefox.launch(headless=True)
 
             # Define a dictionary to hold the results for each source
             resultsDict = {}

@@ -1,5 +1,17 @@
 ## Changelog
 
+- v1.7
+
+  - New
+
+    - Add code to recognise the captcha on Bing.
+
+  - Change
+
+    - Use Firefox instead of Chrome for the browser. This fixed an issue with DuckDuckGo blocking for bot detection.
+    - Google seems to have made a change where the link used is only showing 5 pages and max links returned was 40. By removing the `&num=100` parameter, this is getting the maximum links again.
+    - BUG FIX: There were a few references to `arg.antibot_timeout` which causes an error because it should be `args.antibot_timeout`.
+
 - v1.6
 
   - New
