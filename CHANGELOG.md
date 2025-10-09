@@ -1,5 +1,15 @@
 ## Changelog
 
+- v1.6
+
+  - New
+
+    - Allow a file of dorks to be passed as input. If the input value is the name of a valid file it will be treated as a file and each line will be run as a separate dork, otherwise it is assumed the input value is a single dork.
+
+  - Changed
+
+    - Show what dork is currently being processed, not just if `-v` was passed.
+
 - v1.5
 
   - Changed

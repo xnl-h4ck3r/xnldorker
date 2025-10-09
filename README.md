@@ -1,6 +1,6 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v1.5
+## About - v1.6
 
 This is a tool used to run a dork on different search sites.
 The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex**
@@ -41,38 +41,46 @@ pipx install git+https://github.com/xnl-h4ck3r/xnldorker.git
 
 ## Usage
 
-| Argument | Long Argument        | Description                                                                                                                                                                                                                                       |
-| -------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| -i       | --input              | A dork to use on the search sources. If no advanced search operators (e.g. `site:`, `inurl:`, `intitle:`, etc.) are used in the input value, then it is assumed a domain only is passed, and will be prefixed with `site:`                        |
-| -o       | --output             | The output file that will contain the results (default: output.txt). If piped to another program, output will be written to STDOUT instead.                                                                                                       |
-| -ow      | --output-overwrite   | If the output file already exists, it will be overwritten instead of being appended to.                                                                                                                                                           |
-| -os      | --output-sources     | Show the source of each endpoint in the output. Each endpoint will be prefixed, e.g. `[ Bing ] https://example.com`.                                                                                                                              |
-| -s       | --sources            | Specific sources to use when searching (e.g. `-s duckduckgo,bing`). Use `-ls` to display all available sources.                                                                                                                                   |
-| -es      | --exclude-sources    | Specific sources to exclude searching (`-s google,startpage`). Use `-ls` to display all available sources.                                                                                                                                        |
-| -cs      | --concurrent-sources | The number of sources to search at the same time (default: `2`). Passing `0` will run **ALL** specified sources at the same time (this could be very resource intensive and negatively affect results).                                           |
-| -ls      | --list-sources       | List all available sources.                                                                                                                                                                                                                       |
-| -t       | --timeout            | How many seconds to wait for the source to respond (default: 30 seconds)                                                                                                                                                                          |
-| -sb      | --show-browser       | View the browser instead of using a headless browser. This has an advantage because if there is a known anti-bot mechanism, then it will pause for a set time (determined by `-abt`) so you can manually resolve it before `xnldorker` continues. |
-| -abt     | --antibot-timeout    | How many seconds to wait when the `-sb` option was used and a known anti-bot mechanism is encountered (default: 90). This is the time you have to manually respond to the anti-bot mechanism before it tries to continue.                         |
-| -proxy   |                      | Send the links found to a proxy, e.g `http://127.0.0.1:8080`.                                                                                                                                                                                     |
-|          | --debug              | Save page contents on error.                                                                                                                                                                                                                      |
-| -nb      | --no-banner          | Hides the tool banner (it is hidden by default if you pipe input to 'xnldorker') output.                                                                                                                                                          |
-|          | --version            | Show current version number.                                                                                                                                                                                                                      |
-| -v       | --verbose            | Verbose output                                                                                                                                                                                                                                    |
-| -vv      | --vverbose           | Increased verbose output                                                                                                                                                                                                                          |
+| Argument | Long Argument        | Description                                                                                                                                                                                                                                                   |
+| -------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| -i       | --input              | A dork to use on the search sources, or a file or dorks (one per line). If no advanced search operators (e.g. `site:`, `inurl:`, `intitle:`, etc.) are used in the input value, then it is assumed a domain only is passed, and will be prefixed with `site:` |
+| -o       | --output             | The output file that will contain the results (default: output.txt). If piped to another program, output will be written to STDOUT instead.                                                                                                                   |
+| -ow      | --output-overwrite   | If the output file already exists, it will be overwritten instead of being appended to.                                                                                                                                                                       |
+| -os      | --output-sources     | Show the source of each endpoint in the output. Each endpoint will be prefixed, e.g. `[ Bing ] https://example.com`.                                                                                                                                          |
+| -s       | --sources            | Specific sources to use when searching (e.g. `-s duckduckgo,bing`). Use `-ls` to display all available sources.                                                                                                                                               |
+| -es      | --exclude-sources    | Specific sources to exclude searching (`-s google,startpage`). Use `-ls` to display all available sources.                                                                                                                                                    |
+| -cs      | --concurrent-sources | The number of sources to search at the same time (default: `2`). Passing `0` will run **ALL** specified sources at the same time (this could be very resource intensive and negatively affect results).                                                       |
+| -ls      | --list-sources       | List all available sources.                                                                                                                                                                                                                                   |
+| -t       | --timeout            | How many seconds to wait for the source to respond (default: 30 seconds)                                                                                                                                                                                      |
+| -sb      | --show-browser       | View the browser instead of using a headless browser. This has an advantage because if there is a known anti-bot mechanism, then it will pause for a set time (determined by `-abt`) so you can manually resolve it before `xnldorker` continues.             |
+| -abt     | --antibot-timeout    | How many seconds to wait when the `-sb` option was used and a known anti-bot mechanism is encountered (default: 90). This is the time you have to manually respond to the anti-bot mechanism before it tries to continue.                                     |
+| -proxy   |                      | Send the links found to a proxy, e.g `http://127.0.0.1:8080`.                                                                                                                                                                                                 |
+|          | --debug              | Save page contents on error.                                                                                                                                                                                                                                  |
+| -nb      | --no-banner          | Hides the tool banner (it is hidden by default if you pipe input to 'xnldorker') output.                                                                                                                                                                      |
+|          | --version            | Show current version number.                                                                                                                                                                                                                                  |
+| -v       | --verbose            | Verbose output                                                                                                                                                                                                                                                |
+| -vv      | --vverbose           | Increased verbose output                                                                                                                                                                                                                                      |
 
 ## Examples
 
 ### Basic use
 
 ```
+# For single dork
 xnldorker -i redbull.com -v
+
+# For file of dorks
+xnldorker -i dorksfile.txt -v
 ```
 
 or
 
 ```
+# For single dork
 echo "redbull.com" | xnldorker -v
+
+# For file of dorks
+cat dorksfile.txt | xnldorker -v
 ```
 
 (without any advanced search operators (e.g. `site:`, `inurl:`, `intitle:`, etc.) then a domain is assumed and prefied with `site:`. So in this case, `site:redbull.com` is searched for)
@@ -115,7 +123,6 @@ If you use the `--debug` option, then `xnldorker` will try to write a html file 
 
 - Add more sources.
 - Identify anti bot mechanism pages on other sources (it's only on a few at the moment) so that `xnldorker` can pause to manually respond if the browser is being viewed.
-- Maybe allow a file of dorks to be passed as input.
 - Find our what search operators work on which sources and adjust the `--sources` automatically depending on which sources will get the expected results.
 - Add arguments that let you specify a certain time-frame for results which can often be specified with query parameters in the search engine request.
 - Add argument that let you specify a certain Region for results which can often be specified with query parameters in the search engine request.

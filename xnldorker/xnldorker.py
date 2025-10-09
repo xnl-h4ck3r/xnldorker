@@ -1124,7 +1124,10 @@ def showOptionsAndConfig():
     global sourcesToProcess, inputDork
     try:
         write(colored('Selected options:', 'cyan'))
-        write(colored('-i: ' + inputDork, 'magenta')+colored(' The dork to used to search on the sources.','white'))
+        if os.path.isfile(os.path.expanduser(args.input)):
+            write(colored('-i: ' + args.input, 'magenta')+colored(' The file of dorks used to search on the sources.','white'))
+        else:
+            write(colored('-i: ' + inputDork, 'magenta')+colored(' The dork used to search on the sources.','white'))
         if args.output is not None:
             write(colored('-o: ' + args.output, 'magenta')+colored(' Where gathered endpoints will be written.','white'))
         else:
@@ -1297,25 +1300,37 @@ async def run_main():
             sourcesToProcess = [source for source in sourcesToProcess if source not in args.exclude_sources]
 
         # Get the input dork, depending on the input type
+        dorks = []
         if sys.stdin.isatty():
-            inputDork = args.input
+            if os.path.isfile(os.path.expanduser(args.input)):
+                with open(os.path.expanduser(args.input), 'r') as f:
+                    dorks = [line.strip() for line in f]
+            else:
+                dorks.append(args.input)
         else:
-            inputDork = sys.stdin.readline().strip()
-        
-        # If the input value doesn't seem to start with an advanced search operator and has no spaces, assume it is a domain only and prefix with "site:"
-        if not re.match(r'(^|\s)[a-z]*:', inputDork, re.IGNORECASE) and ' ' not in inputDork:
-            inputDork = 'site:'+inputDork
+            dorks = [line.strip() for line in sys.stdin if line.strip()]
+
+        firstDork = True
+        for dork in dorks:
+            inputDork = dork
+            allSubs.clear()
+            # If the input value doesn't seem to start with an advanced search operator and has no spaces, assume it is a domain only and prefix with "site:"
+            if not re.match(r'(^|\s)[a-z]*:', inputDork, re.IGNORECASE) and ' ' not in inputDork:
+                inputDork = 'site:'+inputDork
             
-        # If input is not piped, show the banner, and if --verbose option was chosen show options and config values
-        if sys.stdin.isatty():
-            # Show banner unless requested to hide
-            if not args.no_banner:
-                showBanner()
-            if verbose():
-                showOptionsAndConfig()
-            
-        # Process the input given on -i (--input), or <stdin>
-        await processInput(inputDork)
+            # Only for first dork...
+            # If input is not piped, show the banner, and if --verbose option was chosen show options and config values
+            if firstDork and sys.stdin.isatty():
+                firstDork = False
+                # Show banner unless requested to hide
+                if not args.no_banner:
+                    showBanner()
+                if verbose():
+                    showOptionsAndConfig()
+                    
+            # Process the input given on -i (--input), or <stdin>
+            write(colored('Processing dork: ', 'cyan') + colored(inputDork, 'white'))
+            await processInput(inputDork)
 
         # If there were some subs found, and the --resubmit-without-subs was passed, then run again with subdomains removed
         if len(allSubs) > 0 and args.resubmit_without_subs:
