@@ -1,9 +1,11 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v1.7
+## About - v2.0
 
 This is a tool used to run a dork on different search sites.
-The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex**
+The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex, Ecosia, Baidu**
+
+**IMPORTANT: This tool does not solve captchas at the moment, so it is advised you use the `-sb`/`--show-browser` argument and manually deal with the captchas to get best results.**
 
 **IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` (and/or `--exclude-source`) argument to specify the appropriate sources.**
 
@@ -99,7 +101,7 @@ The output can also be piped to another command.
 
 ## Recommendations
 
-- Using `-v`/`--verbose` is always a good idea when you first start using a tool. It will help you understand what the tool is doing and highlight any potential problems too.
+- Using `-v`/`--verbose` is always a good idea when you first start using a tool. It will help you understand what the tool is doing and highlight any potential problems too. Using very verbose mode (`-vv`) can give even more information.
 - If you do not need to run silently in the background, **I would recommend using the `-sb`/`--show-browser` argument** because you can see what `xnldorker` is doing (and if it seems to be working ok), plus if there is any known ant-bot detection recognised (currently not for all sources) then you will be notified and have the option to resolve this before `xnldorker` continues.
 - If you show the browsers and you get an anti-bot page shown, the process will be paused and wait for the number of seconds specified by `-abt`/`--antibot_timeout` (default 90 seconds). However, it you manually respond to the check and want it to resume quicker, you can enter the name of the source (in lowercase) and press ENTER to resume again.
 - The number of concurrent sources processed defaults to 2. This can be changed with `-cs`/`--concurrent-sources`. If you are running `xnldorker` on a low spec VPS, it could be worth setting `-cs 1`. The higher the value of `-cs` the quicker the tool will be, but may affect the quality and quantity of results.
@@ -121,7 +123,8 @@ If you use the `--debug` option, then `xnldorker` will try to write a html file 
 
 ## TODO
 
-- Add more sources, e.g. baidu, ecosia.
+- Bing no longer works because of bit detection. Find a way around it.
+- Deal with an issue where sometimes the process can get `Killed` because it uses too much memory.
 - Identify anti bot mechanism pages on other sources (it's only on a few at the moment) so that `xnldorker` can pause to manually respond if the browser is being viewed.
 - Find our what search operators work on which sources and adjust the `--sources` automatically depending on which sources will get the expected results.
 - Add arguments that let you specify a certain time-frame for results which can often be specified with query parameters in the search engine request.

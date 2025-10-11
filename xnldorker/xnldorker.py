@@ -19,13 +19,16 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from urllib3.exceptions import InsecureRequestWarning
 import tldextract
+from urllib.parse import unquote, urlparse, parse_qs
+import html
+import time
 try:
     from . import __version__
 except:
     pass
 
 # Available sources to search
-SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google', 'yandex']
+SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google', 'yandex', 'ecosia', 'baidu']
 
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
@@ -63,6 +66,8 @@ yahooEndpoints = set()
 googleEndpoints = set()
 startpageEndpoints = set()
 yandexEndpoints = set()
+ecosiaEndpoints = set()
+baiduEndpoints = set()
 allSubs = set()
 sourcesToProcess = []
 
@@ -911,6 +916,244 @@ async def getYandex(browser, dork, semaphore):
             semaphore.release()
         except:
             pass
+
+async def getResultsEcosia(page, endpoints):
+    global allSubs
+    try:
+        content = await page.content()
+        soup = BeautifulSoup(content, 'html.parser')
+        a_tags = soup.find_all('a', attrs={'data-test-id': 'result-link'})
+        for a in a_tags:
+            href = a.get('href')
+            if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*ecosia\.[^\/\.]{2,}', href):
+                endpoints.append(href.strip())
+                # If the same search is going to be resubmitted without subs, get the subdomain
+                if args.resubmit_without_subs:
+                    allSubs.add(getSubdomain(href.strip()))
+        return endpoints
+    except Exception as e:
+        writerr(colored('ERROR getResultsEcosia 1: ' + str(e), 'red')) 
+        
+async def getEcosia(browser, dork, semaphore):
+    global stopProgram
+    try:
+        endpoints = []
+        page = None
+        await semaphore.acquire()
+        page = await browser.new_page(user_agent=DEFAULT_USER_AGENT)
+        
+        if verbose():
+            writerr(colored('[ Ecosia ] Starting...', 'green'))
+        
+        # Call with parameters:
+        await page.goto(f'https://www.ecosia.org/search?q={dork}', timeout=args.timeout*1000)
+        pageNo = 1
+        
+        try:
+            # Wait for the search results to be fully loaded and have links
+            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+        except:
+            pass    
+        
+        # Check if the cookie banner exists and click reject if it does
+        if await page.query_selector('#didomi-notice-disagree-button'):
+            # Click the button to reject
+            await page.click('#didomi-notice-disagree-button')
+    
+        # Get the results so far, just in case it ends early
+        endpoints =  await getResultsEcosia(page, endpoints)
+            
+        async def click_Next():
+            next_button = await page.query_selector('span:has-text("Next")')
+            if next_button:
+                await next_button.click()
+                await page.wait_for_load_state('networkidle', timeout=args.timeout * 1000)
+
+        # Loop to repeatedly check for the Next button and click it until it doesn't exist
+        while await page.query_selector('span:has-text("Next")'):
+            if stopProgram:
+                break
+            #await click_Next()
+            if vverbose():
+                pageNo += 1
+                writerr(colored('[ Ecosia ] Clicking "Next" button to display page '+str(pageNo), 'green', attrs=['dark'])) 
+            await click_Next()
+            # Get the results so far, just in case it ends early
+            endpoints =  await getResultsEcosia(page, endpoints)
+        
+        # Get all the results
+        endpoints = await getResultsEcosia(page, endpoints)
+        setEndpoints = set(endpoints)
+        if verbose():
+            noOfEndpoints = len(setEndpoints)
+            writerr(colored(f'[ Ecosia ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+        return setEndpoints
+     
+    except Exception as e:
+        noOfEndpoints  = len(set(endpoints))
+        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
+            writerr(colored(f'[ Ecosia ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
+        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
+            writerr(colored(f'[ Ecosia ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+        else:
+            writerr(colored('[ Ecosia ] ERROR getEcosia 1: ' + str(e), 'red'))  
+        # If debug mode then save a copy of the page
+        if args.debug and page is not None:
+            await savePageContents('Ecosia',page)
+        return set(endpoints)
+    finally:
+        try:
+            await page.close()
+            semaphore.release()
+        except:
+            pass
+        
+async def getResultsBaidu(page, endpoints):
+    global allSubs
+    try:
+        await page.wait_for_load_state("networkidle")
+
+        # Wait until at least one feedback div exists
+        try:
+            await page.wait_for_selector("div.cosc-feedback", timeout=1000)
+        except:
+            return endpoints
+
+        # Query feedback divs fresh
+        feedback_divs = await page.query_selector_all("div.cosc-feedback")
+
+        for div in feedback_divs:
+            hover_attempts = 0
+            while hover_attempts < 5:
+                try:
+                    await div.hover()
+                    await page.wait_for_timeout(200) 
+                    break
+                except Exception:
+                    hover_attempts += 1
+                    await page.wait_for_timeout(200)
+            else:
+                pass
+
+        # Collect all anchors that appeared after hovering
+        a_tags = await page.query_selector_all('a[href*="tools?url="]')
+        for a in a_tags:
+            href = await a.get_attribute("href")
+            if not href:
+                continue
+            if href.startswith("//"):
+                href = "https:" + href
+
+            parsed = urlparse(href)
+            query_params = parse_qs(parsed.query)
+            url_value = query_params.get('url')
+            if not url_value:
+                continue
+
+            decoded_url = html.unescape(unquote(url_value[0]))
+            endpoints.append(decoded_url.strip())
+
+            if args.resubmit_without_subs:
+                allSubs.add(getSubdomain(decoded_url.strip()))
+
+        return endpoints
+
+    except Exception as e:
+        writerr(colored('ERROR getResultsBaidu: ' + str(e), 'red'))
+        return endpoints
+
+
+async def getBaidu(browser, dork, semaphore):
+    global stopProgram
+    page = None
+    endpoints = []
+
+    try:
+        await semaphore.acquire()
+        page = await browser.new_page(user_agent=DEFAULT_USER_AGENT)
+
+        if verbose():
+            writerr(colored('[ Baidu ] Starting...', 'green'))
+
+        # Go to search page
+        await page.goto(f'https://www.baidu.com/s?ie=utf-8&ct=0&wd={dork}', timeout=args.timeout*1000)
+
+        # Wait for results to load
+        try:
+            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+        except:
+            pass
+
+        # Check if bot detection captcha is displayed
+        if 'captcha' in page.url:
+            if args.show_browser:
+                writerr(colored(f'[ Baidu ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "baidu" and press ENTER...','yellow')) 
+                await wait_for_word_or_sleep("baidu", args.antibot_timeout)
+                writerr(colored(f'[ Baidu ] Resuming...', 'green'))
+            else:
+                writerr(colored('[ Baidu ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                return set(endpoints)
+        else:
+            # Else wait for a popup window to disappear
+            time.sleep(5)
+
+        pageNo = 1
+        while True:
+            # Get results from current page
+            endpoints = await getResultsBaidu(page, endpoints)
+
+            # Find next page button
+            next_button = await page.query_selector('a.n:has(span:has-text("下一页"))')
+            if not next_button or stopProgram:
+                break
+
+            pageNo += 1
+            if vverbose():
+                writerr(colored(f'[ Baidu ] Clicking "Next" button to display page {pageNo}', 'green', attrs=['dark']))
+
+            # Remember old feedback div IDs
+            old_feedback_divs = await page.query_selector_all("div.cosc-feedback")
+            old_ids = [await div.get_attribute("id") for div in old_feedback_divs]
+
+            # Click next
+            await next_button.scroll_into_view_if_needed()
+            await next_button.click()
+
+            # Wait for new feedback divs to appear (max ~4 seconds)
+            for _ in range(20):
+                await page.wait_for_timeout(200)
+                new_feedback_divs = await page.query_selector_all("div.cosc-feedback")
+                new_ids = [await div.get_attribute("id") for div in new_feedback_divs]
+                if set(new_ids) != set(old_ids):
+                    break
+
+        setEndpoints = set(endpoints)
+        if verbose():
+            writerr(colored(f'[ Baidu ] Complete! {len(setEndpoints)} endpoints found', 'green'))
+
+        return setEndpoints
+
+    except Exception as e:
+        noOfEndpoints = len(set(endpoints))
+        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
+            writerr(colored(f'[ Baidu ] Page timed out - got {noOfEndpoints} results', 'red'))
+        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
+            writerr(colored(f'[ Baidu ] Search aborted - got {noOfEndpoints} results', 'red')) 
+        else:
+            writerr(colored('[ Baidu ] ERROR getBaidu: ' + str(e), 'red'))  
+
+        if args.debug and page is not None:
+            await savePageContents('Baidu', page)
+
+        return set(endpoints)
+
+    finally:
+        try:
+            if page is not None:
+                await page.close()
+            semaphore.release()
+        except:
+            pass
         
 async def savePageContents(source, page):
     try:
@@ -918,7 +1161,7 @@ async def savePageContents(source, page):
         await page.keyboard.press("Escape")
 
         # Wait for a short duration to ensure the page loading is stopped
-        await asyncio.sleep(2000)
+        await asyncio.sleep(2)
         
         # Get the page contents and save to file
         content = await page.content()
@@ -933,7 +1176,7 @@ async def savePageContents(source, page):
         writerr(colored(f'[ {source} ] Unable to save page contents: {str(e)}', 'cyan')) 
 
 async def processInput(dork):
-    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints
+    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, stopProgram
     try:
         
         # Create a single browser instance
@@ -970,6 +1213,10 @@ async def processInput(dork):
                     includedSources.append(getGoogle(browser, dork, semaphore))
                 if 'yandex' in sourcesToProcess:
                     includedSources.append(getYandex(browser, dork, semaphore))
+                if 'ecosia' in sourcesToProcess:
+                    includedSources.append(getEcosia(browser, dork, semaphore))
+                if 'baidu' in sourcesToProcess:
+                    includedSources.append(getBaidu(browser, dork, semaphore))
             except:
                 pass
             
@@ -978,6 +1225,8 @@ async def processInput(dork):
             
             # Populate the results dictionary and endpoint lists
             for source, result in zip(sourcesToProcess, results):
+                if stopProgram:
+                    break 
                 if source not in resultsDict:  # Check if the source is not already in the resultsDict
                     resultsDict[source] = result  # If not, add it
                 else:
@@ -997,6 +1246,10 @@ async def processInput(dork):
                     googleEndpoints.update(result)
                 elif source == 'yandex':
                     yandexEndpoints.update(result)
+                elif source == 'ecosia':
+                    ecosiaEndpoints.update(result)
+                elif source == 'baidu':
+                    baiduEndpoints.update(result)
         
             # Close the browser instance once all searches are done
             try:
@@ -1013,7 +1266,7 @@ async def processInput(dork):
             pass
     
 async def processOutput():
-    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, sourcesToProcess
+    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, sourcesToProcess
     try:
         allEndpoints = set()
 
@@ -1031,6 +1284,10 @@ async def processOutput():
                 allEndpoints.update(f'[ Google ] {endpoint}' for endpoint in googleEndpoints)
             if yandexEndpoints:
                 allEndpoints.update(f'[ Yandex ] {endpoint}' for endpoint in yandexEndpoints)
+            if ecosiaEndpoints:
+                allEndpoints.update(f'[ Ecosia ] {endpoint}' for endpoint in ecosiaEndpoints)
+            if baiduEndpoints:
+                allEndpoints.update(f'[ Ecosia ] {endpoint}' for endpoint in baiduEndpoints)
         else:
             if duckduckgoEndpoints:
                 allEndpoints |= duckduckgoEndpoints
@@ -1044,6 +1301,10 @@ async def processOutput():
                 allEndpoints |= googleEndpoints
             if yandexEndpoints:
                 allEndpoints |= yandexEndpoints
+            if ecosiaEndpoints:
+                allEndpoints |= ecosiaEndpoints
+            if baiduEndpoints:
+                allEndpoints |= baiduEndpoints
 
         if verbose() and sys.stdin.isatty():
             writerr(colored('\nTotal endpoints found: '+str(len(allEndpoints))+' 🤘  ', 'cyan')+str(sourcesToProcess))

@@ -1,5 +1,16 @@
 ## Changelog
 
+- v2.0
+
+  - New
+
+    - Add Ecosia search engine as a source. This usually returns up to 200 links for any search query. I have not come across a captcha on this site yet, so if one does happen it will not be paused.
+    - Add Baidu search engine as a source. This usually returns up to around 200 links for any search query, but running the same query more than once can actually get a few extra links.
+
+  - Change
+
+    - BUG FIX: When `-debug` was used, the file of the current content wasn't being written. The `sleep` command was waiting for 2000 seconds instead of 2!!!
+
 - v1.7
 
   - New
