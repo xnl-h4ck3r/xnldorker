@@ -1,9 +1,9 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v2.0
+## About - v2.1
 
 This is a tool used to run a dork on different search sites.
-The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex, Ecosia, Baidu**
+The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex, Ecosia, Baidu, Seznam**
 
 **IMPORTANT: This tool does not solve captchas at the moment, so it is advised you use the `-sb`/`--show-browser` argument and manually deal with the captchas to get best results.**
 

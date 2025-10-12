@@ -1,5 +1,11 @@
 ## Changelog
 
+- v2.1
+
+  - New
+
+  - Add seznam.cz search engine as a source. It can return a lot more results that other search engines. I have not come across a captcha on this site yet, so if one does happen it will not be paused.
+
 - v2.0
 
   - New

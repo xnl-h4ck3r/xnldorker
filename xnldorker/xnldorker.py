@@ -28,7 +28,7 @@ except:
     pass
 
 # Available sources to search
-SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google', 'yandex', 'ecosia', 'baidu']
+SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google', 'yandex', 'ecosia', 'baidu', 'seznam']
 
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
@@ -68,6 +68,7 @@ startpageEndpoints = set()
 yandexEndpoints = set()
 ecosiaEndpoints = set()
 baiduEndpoints = set()
+seznamEndpoints = set()
 allSubs = set()
 sourcesToProcess = []
 
@@ -1155,6 +1156,101 @@ async def getBaidu(browser, dork, semaphore):
         except:
             pass
         
+async def getResultsSeznam(page, endpoints):
+    global allSubs
+    try:
+        content = await page.content()
+        soup = BeautifulSoup(content, 'html.parser')
+        a_tags = soup.find_all('a', attrs={'tabindex': '0'})
+        for a in a_tags:
+            href = a.get('href')
+            if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*seznam\.[^\/\.]{2,}', href):
+                endpoints.append(href.strip())
+                # If the same search is going to be resubmitted without subs, get the subdomain
+                if args.resubmit_without_subs:
+                    allSubs.add(getSubdomain(href.strip()))
+        return endpoints
+    except Exception as e:
+        writerr(colored('ERROR getResultsSeznam 1: ' + str(e), 'red'))
+
+async def getSeznam(browser, dork, semaphore):
+    global stopProgram
+    page = None
+    endpoints = []
+
+    try:
+        await semaphore.acquire()
+        page = await browser.new_page(user_agent=DEFAULT_USER_AGENT)
+
+        if verbose():
+            writerr(colored('[ Seznam ] Starting...', 'green'))
+
+        # Go to search page
+        await page.goto(f'https://search.seznam.cz/?q={dork}', timeout=args.timeout*1000)
+
+        pageNo = 1
+        
+        try:
+            # Wait for the search results to be fully loaded and have links
+            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+        except:
+            pass    
+    
+        # Get the results so far, just in case it ends early
+        endpoints =  await getResultsSeznam(page, endpoints)
+
+        # Main loop to keep navigating to next pages until there's no "Next page" link
+        while True:
+            if stopProgram:
+                break
+            # Find the link with the title "Další strana" (Next page)
+            if await page.query_selector('a[title="Další strana"]'):
+                await page.click('a[title="Další strana"]')
+                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+                pageNo += 1
+                if vverbose():
+                    writerr(colored('[ Seznam ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
+                
+                try:
+                    # Wait for the search results to be fully loaded and have links
+                    await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+                except:
+                    pass   
+        
+                # Get all the results
+                endpoints = await getResultsSeznam(page, endpoints)
+            else:
+                # No "Next page" link found, exit the loop
+                break
+        
+        setEndpoints = set(endpoints)
+        if verbose():
+            noOfEndpoints = len(setEndpoints)
+            writerr(colored(f'[ Seznam ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+        return setEndpoints
+    
+    except Exception as e:
+        noOfEndpoints = len(set(endpoints))
+        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
+            writerr(colored(f'[ Seznam ] Page timed out - got {noOfEndpoints} results', 'red'))
+        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
+            writerr(colored(f'[ Seznam ] Search aborted - got {noOfEndpoints} results', 'red')) 
+        else:
+            writerr(colored('[ Seznam ] ERROR getSeznam: ' + str(e), 'red'))  
+
+        if args.debug and page is not None:
+            await savePageContents('Seznam', page)
+
+        return set(endpoints)
+
+    finally:
+        try:
+            if page is not None:
+                await page.close()
+            semaphore.release()
+        except:
+            pass
+
 async def savePageContents(source, page):
     try:
         # Press the "Escape" key to stop page loading
@@ -1176,7 +1272,7 @@ async def savePageContents(source, page):
         writerr(colored(f'[ {source} ] Unable to save page contents: {str(e)}', 'cyan')) 
 
 async def processInput(dork):
-    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, stopProgram
+    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, stopProgram
     try:
         
         # Create a single browser instance
@@ -1217,6 +1313,8 @@ async def processInput(dork):
                     includedSources.append(getEcosia(browser, dork, semaphore))
                 if 'baidu' in sourcesToProcess:
                     includedSources.append(getBaidu(browser, dork, semaphore))
+                if 'seznam' in sourcesToProcess:
+                    includedSources.append(getSeznam(browser, dork, semaphore))
             except:
                 pass
             
@@ -1250,6 +1348,8 @@ async def processInput(dork):
                     ecosiaEndpoints.update(result)
                 elif source == 'baidu':
                     baiduEndpoints.update(result)
+                elif source == 'seznam':
+                    seznamEndpoints.update(result)
         
             # Close the browser instance once all searches are done
             try:
@@ -1266,7 +1366,7 @@ async def processInput(dork):
             pass
     
 async def processOutput():
-    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, sourcesToProcess
+    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, sourcesToProcess
     try:
         allEndpoints = set()
 
@@ -1287,7 +1387,9 @@ async def processOutput():
             if ecosiaEndpoints:
                 allEndpoints.update(f'[ Ecosia ] {endpoint}' for endpoint in ecosiaEndpoints)
             if baiduEndpoints:
-                allEndpoints.update(f'[ Ecosia ] {endpoint}' for endpoint in baiduEndpoints)
+                allEndpoints.update(f'[ Baidud ] {endpoint}' for endpoint in baiduEndpoints)
+            if seznamEndpoints:
+                allEndpoints.update(f'[ Seznam ] {endpoint}' for endpoint in seznamEndpoints)
         else:
             if duckduckgoEndpoints:
                 allEndpoints |= duckduckgoEndpoints
@@ -1305,6 +1407,8 @@ async def processOutput():
                 allEndpoints |= ecosiaEndpoints
             if baiduEndpoints:
                 allEndpoints |= baiduEndpoints
+            if seznamEndpoints:
+                allEndpoints |= seznamEndpoints
 
         if verbose() and sys.stdin.isatty():
             writerr(colored('\nTotal endpoints found: '+str(len(allEndpoints))+' 🤘  ', 'cyan')+str(sourcesToProcess))
