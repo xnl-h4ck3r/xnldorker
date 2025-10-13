@@ -1,5 +1,16 @@
 ## Changelog
 
+- v2.2
+
+  - New
+
+    - Add `--request-proxy` argument for browser request proxying. Can be a proxy string (e.g. `http://user:pass@1.2.3.4:8000`, `socks5://host:port`) or a file containing proxy list (one per line, random selection).
+
+  - Changed
+
+    - Rename `-proxy` argument to `--forward-proxy` for sending found links to a proxy (e.g. Caido, Burp Suite).Also, it now sends endpoints to the proxy as they are found (real-time) instead of at the end of the search, using a separate background thread to avoid impacting search performance.
+    - BUG FIX: Getting endpoints from Yandex wasn't always working correctly. This has been rewritten to be more robust and to avoid timing out when there are no results.
+
 - v2.1
 
   - New

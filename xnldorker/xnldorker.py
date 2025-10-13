@@ -22,6 +22,9 @@ import tldextract
 from urllib.parse import unquote, urlparse, parse_qs
 import html
 import time
+import random
+import threading
+import queue
 try:
     from . import __version__
 except:
@@ -71,6 +74,10 @@ baiduEndpoints = set()
 seznamEndpoints = set()
 allSubs = set()
 sourcesToProcess = []
+proxy_queue = None
+proxy_thread = None
+proxy_session = None
+proxy_sent_endpoints = set()
 
 # Functions used when printing messages dependant on verbose options
 def verbose():
@@ -104,6 +111,129 @@ def showVersion():
             write('Current xnldorker version '+__version__+' ('+colored('outdated','red')+')\n')
     except:
         pass
+
+def selectRequestProxy(proxy_input):
+    """
+    Handle request proxy selection - either from file or direct value
+    """
+    try:
+        if os.path.isfile(os.path.expanduser(proxy_input)):
+            with open(os.path.expanduser(proxy_input), 'r') as f:
+                proxies = [line.strip() for line in f if line.strip()]
+            if proxies:
+                selected_proxy = random.choice(proxies)
+                return selected_proxy
+            else:
+                writerr(colored('ERROR: Request proxy file is empty', 'red'))
+                return None
+        else:
+            return proxy_input
+    except Exception as e:
+        writerr(colored(f'ERROR selectRequestProxy: {str(e)}', 'red'))
+        return None
+
+def proxy_worker():
+    """
+    Worker thread function to send endpoints to forward proxy
+    """
+    global proxy_queue, proxy_session, stopProgram
+    
+    while not stopProgram:
+        try:
+            # Get endpoint from queue with timeout
+            endpoint = proxy_queue.get(timeout=1)
+            if endpoint is None:  # Sentinel value to stop thread
+                break
+                
+            try:
+                # Send to proxy
+                resp = proxy_session.get(
+                    endpoint,
+                    allow_redirects=True,
+                    verify=False,
+                    headers={"User-Agent": "xnldorker by @xnl-h4ck3r"},
+                    timeout=10
+                )
+                if vverbose():
+                    writerr(colored(f"[ Forward Proxy ] Sent {endpoint}", 'green', attrs=['dark']))
+                    
+            except Exception as e:
+                if verbose():
+                    writerr(colored(f"[ Forward Proxy ] Failed to send {endpoint}: {str(e)}", "yellow"))
+                    
+            proxy_queue.task_done()
+            
+        except queue.Empty:
+            continue
+        except Exception as e:
+            if verbose():
+                writerr(colored(f"[ Forward Proxy ] Worker error: {str(e)}", "red"))
+            break
+
+def start_proxy_thread():
+    """
+    Initialize and start the proxy forwarding thread
+    """
+    global proxy_queue, proxy_thread, proxy_session
+    
+    if not args.forward_proxy:
+        return
+        
+    try:
+        # Initialize queue and session
+        proxy_queue = queue.Queue()
+        proxy_session = requests.Session()
+        proxy_session.proxies = {
+            "http": args.forward_proxy,
+            "https": args.forward_proxy,
+        }
+        requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
+        
+        # Start worker thread
+        proxy_thread = threading.Thread(target=proxy_worker, daemon=True)
+        proxy_thread.start()
+        
+        if verbose():
+            writerr(colored(f'[ Forward Proxy ] Started background thread for {args.forward_proxy}', 'cyan'))
+            
+    except Exception as e:
+        writerr(colored(f'ERROR start_proxy_thread: {str(e)}', 'red'))
+
+def stop_proxy_thread():
+    """
+    Stop the proxy forwarding thread gracefully
+    """
+    global proxy_queue, proxy_thread, proxy_sent_endpoints
+    
+    if proxy_queue and proxy_thread:
+        try:
+            # Send sentinel value to stop worker
+            proxy_queue.put(None)
+            # Wait for thread to finish with timeout
+            proxy_thread.join(timeout=5)
+            if verbose():
+                sent_count = len(proxy_sent_endpoints)
+                if sent_count > 0:
+                    writerr(colored(f'[ Forward Proxy ] Sent {sent_count} unique endpoints to proxy', 'cyan'))
+        except Exception as e:
+            if verbose():
+                writerr(colored(f'ERROR stop_proxy_thread: {str(e)}', 'red'))
+
+def send_to_proxy(endpoint):
+    """
+    Add endpoint to proxy queue for background processing (with deduplication)
+    """
+    global proxy_queue, proxy_sent_endpoints
+    
+    if proxy_queue and args.forward_proxy:
+        try:
+            # Only send if we haven't sent this endpoint before
+            if endpoint not in proxy_sent_endpoints:
+                proxy_sent_endpoints.add(endpoint)
+                proxy_queue.put(endpoint)
+        except Exception as e:
+            if verbose():
+                writerr(colored(f'ERROR send_to_proxy: {str(e)}', 'red'))
       
 def showBanner():
     writerr('')
@@ -136,6 +266,47 @@ def handler(signal_received, frame):
         stopProgram = True
         writerr(colored('>>> "Oh my God, they killed Kenny... and xnldorker!" - Kyle',"red"))
         writerr(colored('>>> Attempting to rescue any data gathered so far...', "red"))
+
+def detect_proxy_type_error(proxy_url, error_msg):
+    """
+    Detect if user is trying to use HTTP intercepting proxy as request proxy
+    """
+    # Check for common intercepting proxy ports and SSL errors
+    common_intercept_ports = ['8080', '8081', '8082', '9090', '3128']
+    ssl_errors = ['SEC_ERROR_UNKNOWN_ISSUER', 'SSL_ERROR', 'CERT_', 'certificate', 'TLS']
+    
+    # Extract port from proxy URL
+    proxy_port = None
+    if ':' in proxy_url:
+        try:
+            proxy_port = proxy_url.split(':')[-1]
+        except:
+            pass
+    
+    # Check if this looks like an intercepting proxy issue
+    is_common_port = proxy_port in common_intercept_ports
+    is_ssl_error = any(ssl_term in error_msg.upper() for ssl_term in ssl_errors)
+    
+    if is_common_port and is_ssl_error or 'NS_ERROR_UNKNOWN_PROXY_HOST' in error_msg:
+        return True
+    return False
+
+def show_proxy_usage_hint(proxy_url):
+    """
+    Show helpful message about proxy usage
+    """
+    writerr(colored('━' * 60, 'yellow'))
+    writerr(colored('💡 PROXY USAGE HINT:', 'yellow', attrs=['bold']))
+    writerr(colored('It looks like you might be using an HTTP intercepting proxy (like Caido/Burp Suite)', 'white'))
+    writerr(colored('as a --request-proxy. This typically doesn\'t work as expected.', 'white'))
+    writerr('')
+    writerr(colored('For intercepting proxies, use --forward-proxy instead:', 'cyan'))
+    writerr(colored(f'  --forward-proxy {proxy_url}', 'green'))
+    writerr('')
+    writerr(colored('Proxy Usage Guide:', 'white', attrs=['bold']))
+    writerr(colored('• --request-proxy: For routing browser traffic (VPNs, SOCKS proxies)', 'white'))
+    writerr(colored('• --forward-proxy: For sending found endpoints to Caido/Burp/etc.', 'white'))
+    writerr(colored('━' * 60, 'yellow'))
 
 def getSubdomain(url):
     try:
@@ -177,21 +348,25 @@ async def getResultsDuckDuckGo(page, endpoints):
             for a in a_tags:
                 href = a.get('href')
                 if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*duckduckgo\.[^\/\.]{2,}', href):
-                    endpoints.append(href.strip())
+                    endpoint = href.strip()
+                    endpoints.append(endpoint)
+                    # Send to forward proxy in background thread
+                    send_to_proxy(endpoint)
                     # If the same search is going to be resubmitted without subs, get the subdomain
                     if args.resubmit_without_subs:
-                        allSubs.add(getSubdomain(href.strip()))
+                        allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
         writerr(colored('ERROR getResultsDuckDuckGo 1: ' + str(e), 'red')) 
         
-async def getDuckDuckGo(browser, dork, semaphore):
+async def getDuckDuckGo(context, dork, semaphore):
     global stopProgram
     try:
         endpoints = []
         page = None
         await semaphore.acquire()
-        page = await browser.new_page(user_agent=DEFAULT_USER_AGENT)
+        page = await context.new_page()
+        await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
         
         if verbose():
             writerr(colored('[ DuckDuckGo ] Starting...', 'green'))
@@ -264,7 +439,10 @@ async def getDuckDuckGo(browser, dork, semaphore):
         elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
             writerr(colored(f'[ DuckDuckGo ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
         else:
-            writerr(colored('[ DuckDuckGo ] ERROR getDuckDuckGo 1: ' + str(e), 'red'))  
+            writerr(colored('[ DuckDuckGo ] ERROR getDuckDuckGo 1: ' + str(e), 'red'))
+            # Check if this looks like a proxy type error and show helpful hint
+            if args.request_proxy and detect_proxy_type_error(args.request_proxy, str(e)):
+                show_proxy_usage_hint(args.request_proxy)  
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
             await savePageContents('DuckDuckGo',page)
@@ -287,20 +465,24 @@ def extractBingEndpoints(soup):
                 href = a.get('href')
                 recommendations = a.find_parent('div', class_='pageRecoContainer')
                 if href and href.startswith('http') and not recommendations and not re.match(r'^https?:\/\/([\w-]+\.)*bing\.[^\/\.]{2,}', href) and not re.match(r'^https?:\/\/go\.microsoft\.com', href):
-                    endpoints.append(href.strip())
+                    endpoint = href.strip()
+                    endpoints.append(endpoint)
+                    # Send to forward proxy in background thread
+                    send_to_proxy(endpoint)
                     # If the same search is going to be resubmitted without subs, get the subdomain
                     if args.resubmit_without_subs:
-                        allSubs.add(getSubdomain(href.strip()))
+                        allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
         writerr(colored('ERROR extractBingEndpoints 1: ' + str(e), 'red')) 
         
-async def getBing(browser, dork, semaphore):
+async def getBing(context, dork, semaphore):
     try:
-        endpoints = [] 
+        endpoints = []
         page = None
         await semaphore.acquire()
-        page = await browser.new_page(user_agent=DEFAULT_USER_AGENT)
+        page = await context.new_page()
+        await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
         
         if verbose():
             writerr(colored('[ Bing ] Starting...', 'green'))
@@ -384,15 +566,18 @@ def extractStartpageEndpoints(soup):
         for link in result_links:
             href = link.get('href')
             if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*startpage\.[^\/\.]{2,}', href):
-                endpoints.append(href.strip())
+                endpoint = href.strip()
+                endpoints.append(endpoint)
+                # Send to forward proxy in background thread
+                send_to_proxy(endpoint)
                 # If the same search is going to be resubmitted without subs, get the subdomain
                 if args.resubmit_without_subs:
-                    allSubs.add(getSubdomain(href.strip()))
+                    allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
         writerr(colored('ERROR extractStartpageEndpoints 1: ' + str(e), 'red')) 
         
-async def getStartpage(browser, dork, semaphore):
+async def getStartpage(context, dork, semaphore):
     try:
         endpoints = []
         page = None
@@ -552,10 +737,13 @@ def extractYahooEndpoints(soup):
                 if not a.find_parent(class_="searchCenterTopAds") and not a.find_parent(class_="searchCenterBottomAds"):
                     href = a.get('href')
                     if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*yahoo\.[^\/\.]{2,}', href) and not re.match(r'^https?:\/\/([\w-]+\.)*bingj\.com', href):
-                        endpoints.append(href.strip())
+                        endpoint = href.strip()
+                        endpoints.append(endpoint)
+                        # Send to forward proxy in background thread
+                        send_to_proxy(endpoint)
                         # If the same search is going to be resubmitted without subs, get the subdomain
                         if args.resubmit_without_subs:
-                            allSubs.add(getSubdomain(href.strip()))
+                            allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
         writerr(colored('ERROR extractYahooEndpoints 1: ' + str(e), 'red')) 
@@ -569,7 +757,7 @@ def extractYahooResultNumber(url):
     except Exception as e:
         writerr(colored('ERROR extractYahooResultNumber 1: ' + str(e), 'red')) 
         
-async def getYahoo(browser, dork, semaphore):
+async def getYahoo(context, dork, semaphore):
     try:
         endpoints = []
         page = None
@@ -668,15 +856,18 @@ async def getResultsGoogle(page, endpoints):
         for a in a_tags:
             href = a.get('href')
             if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*google\.[^\/\.]{2,}', href):
-                endpoints.append(href.strip())
+                endpoint = href.strip()
+                endpoints.append(endpoint)
+                # Send to forward proxy in background thread
+                send_to_proxy(endpoint)
                 # If the same search is going to be resubmitted without subs, get the subdomain
                 if args.resubmit_without_subs:
-                    allSubs.add(getSubdomain(href.strip()))
+                    allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
         writerr(colored('ERROR getResultsGoogle 1: ' + str(e), 'red')) 
         
-async def getGoogle(browser, dork, semaphore):
+async def getGoogle(context, dork, semaphore):
     try:
         endpoints = []
         page = None
@@ -788,49 +979,42 @@ def extractYandexEndpoints(soup):
         result_links = soup.find_all('a', class_=re.compile('.*organic__url.*'))
         for link in result_links:
             href = link.get('href')
+            print(href)
             if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*yandex\.[^\/\.]{2,}', href):
-                endpoints.append(href.strip())
+                endpoint = href.strip()
+                endpoints.append(endpoint)
+                # Send to forward proxy in background thread
+                send_to_proxy(endpoint)
                 # If the same search is going to be resubmitted without subs, get the subdomain
                 if args.resubmit_without_subs:
-                    allSubs.add(getSubdomain(href.strip()))
+                    allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
         writerr(colored('ERROR extractYandexEndpoints 1: ' + str(e), 'red')) 
         
-async def getYandex(browser, dork, semaphore):
+async def getYandex(context, dork, semaphore):
     try:
         endpoints = []
         page = None
         await semaphore.acquire()
-        # Set the gdpr cookie to reduce the chances of getting Captcha page a bit
-        context = await browser.new_context(
-            storage_state={
-                'cookies': [{
-                    'name': 'gdpr',
-                    'value': '0',
-                    'domain': '.yandex.com',
-                    'path': '/'
-                }]
-            }
-        )
-        page = await context.new_page()
-    
+        page = await browser.new_page(user_agent=DEFAULT_USER_AGENT)
+
         if verbose():
             writerr(colored('[ Yandex ] Starting...', 'green'))
-        
+
         await page.goto(f'https://yandex.com/search/?text={dork}', timeout=args.timeout*1000)
-    
+
         # Check if bot detection is shown
         if '/showcaptcha' in page.url:
             if args.show_browser:
-                writerr(colored(f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...','yellow')) 
+                writerr(colored(f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...','yellow'))
                 await wait_for_word_or_sleep("yandex", args.antibot_timeout)
                 writerr(colored(f'[ Yandex ] Resuming...', 'green'))
             else:
                 writerr(colored('[ Yandex ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                 return set(endpoints)
         try:
-            await page.wait_for_load_state('networkidle', timeout=1000)
+            await page.wait_for_load_state('domcontentloaded', timeout=1000)
         except:
             pass
 
@@ -838,75 +1022,91 @@ async def getYandex(browser, dork, semaphore):
         if '/showcaptcha' in page.url:
             writerr(colored('[ Yandex ] Failed to complete CAPTCHA','red'))
             return set(endpoints)
-        
+
         # Collect endpoints from the initial page
         if vverbose():
-            writerr(colored('[ Yandex ] Getting endpoints from page 1', 'green', attrs=['dark'])) 
+            writerr(colored('[ Yandex ] Getting endpoints from page 1', 'green', attrs=['dark']))
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
         pageNo = 1
         endpoints = extractYandexEndpoints(soup)
 
-        # Loop until there is no submit button in the last form with action="/sp/search"
+        # Main loop to keep navigating to next pages until there's no "Next page" link
         while True:
             if stopProgram:
                 break
 
-            # Click the Next button
-            await page.click('a[aria-label="Next page"]')
-            pageNo += 1
+            next_button = await page.query_selector('a[aria-label="Next page"]')
+
+            if not next_button:
+                # No "Next" button found, exit the loop
+                break
+
+            await next_button.click()
             
+            pageNo += 1
+
+            try:
+                # Yandex shows a "Skeleton" loading overlay.
+                # Wait for this overlay to become hidden.
+                await page.wait_for_selector('div.Skeleton', state='hidden', timeout=args.timeout * 1000)
+                # Add a final wait for the network to be idle.
+                await page.wait_for_load_state('networkidle', timeout=args.timeout * 1000)
+            except Exception as e:
+                if 'timeout' in str(e).lower():
+                    if verbose():
+                        writerr(colored(f'[ Yandex ] Timed out waiting for page {pageNo} to load (skeleton).', 'yellow'))
+                else:
+                    if verbose():
+                        writerr(colored(f'[ Yandex ] Error waiting for skeleton to disappear: {e}', 'yellow'))
+                break # exit loop
+
             # Check if bot detection is shown
             if '/showcaptcha' in page.url:
                 if args.show_browser:
-                    writerr(colored(f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...','yellow')) 
+                    writerr(colored(f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...','yellow'))
                     await wait_for_word_or_sleep("yandex", args.antibot_timeout)
                     writerr(colored(f'[ Yandex ] Resuming...', 'green'))
                 else:
                     writerr(colored('[ Yandex ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
                     return set(endpoints)
 
-            try:
-                # Wait for the search results to be fully loaded and have links
-                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-            except:
-                pass
-
             # If still on Captcha page, then exit
             if '/showcaptcha' in page.url:
                 writerr(colored('[ Yandex ] Failed to complete CAPTCHA','red'))
-                return set(endpoints)
+                break
 
-            # Check if any classes containing organic__url exist
-            try:
-                await page.wait_for_selector('.organic__url', timeout=1000)
-            except:
-                break  # Break the loop if no '.organic__url' found
-        
             if vverbose():
-                writerr(colored('[ Yandex ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
-            
-            # Collect endpoints from the current page
+                writerr(colored('[ Yandex ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark']))
+
             content = await page.content()
             soup = BeautifulSoup(content, 'html.parser')
-            endpoints += extractYandexEndpoints(soup)
+            new_endpoints = extractYandexEndpoints(soup)
+            
+            if not new_endpoints:
+                # If no endpoints found on the new page, assume we are done.
+                if verbose():
+                    writerr(colored(f'[ Yandex ] No more results found on page {pageNo}.', 'yellow'))
+                break
+                
+            endpoints += new_endpoints
 
         await page.close()
 
         setEndpoints = set(endpoints)
         if verbose():
             noOfEndpoints = len(setEndpoints)
-            writerr(colored(f'[ Yandex ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+            writerr(colored(f'[ Yandex ] Complete! {str(noOfEndpoints)} endpoints found', 'green'))
         return setEndpoints
-    
+
     except Exception as e:
         noOfEndpoints  = len(set(endpoints))
         if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
             writerr(colored(f'[ Yandex ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
         elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Yandex ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+            writerr(colored(f'[ Yandex ] Search aborted - got {str(noOfEndpoints)} results', 'red'))
         else:
-            writerr(colored('[ Yandex ] ERROR getYandex1: ' + str(e), 'red')) 
+            writerr(colored('[ Yandex ] ERROR getYandex1: ' + str(e), 'red'))
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
             await savePageContents('Yandex',page)
@@ -927,21 +1127,25 @@ async def getResultsEcosia(page, endpoints):
         for a in a_tags:
             href = a.get('href')
             if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*ecosia\.[^\/\.]{2,}', href):
-                endpoints.append(href.strip())
+                endpoint = href.strip()
+                endpoints.append(endpoint)
+                # Send to forward proxy in background thread
+                send_to_proxy(endpoint)
                 # If the same search is going to be resubmitted without subs, get the subdomain
                 if args.resubmit_without_subs:
-                    allSubs.add(getSubdomain(href.strip()))
+                    allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
         writerr(colored('ERROR getResultsEcosia 1: ' + str(e), 'red')) 
         
-async def getEcosia(browser, dork, semaphore):
+async def getEcosia(context, dork, semaphore):
     global stopProgram
     try:
         endpoints = []
         page = None
         await semaphore.acquire()
-        page = await browser.new_page(user_agent=DEFAULT_USER_AGENT)
+        page = await context.new_page()
+        await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
         
         if verbose():
             writerr(colored('[ Ecosia ] Starting...', 'green'))
@@ -997,7 +1201,10 @@ async def getEcosia(browser, dork, semaphore):
         elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
             writerr(colored(f'[ Ecosia ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
         else:
-            writerr(colored('[ Ecosia ] ERROR getEcosia 1: ' + str(e), 'red'))  
+            writerr(colored('[ Ecosia ] ERROR getEcosia 1: ' + str(e), 'red'))
+            # Check if this looks like a proxy type error and show helpful hint
+            if args.request_proxy and detect_proxy_type_error(args.request_proxy, str(e)):
+                show_proxy_usage_hint(args.request_proxy)
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
             await savePageContents('Ecosia',page)
@@ -1052,10 +1259,13 @@ async def getResultsBaidu(page, endpoints):
                 continue
 
             decoded_url = html.unescape(unquote(url_value[0]))
-            endpoints.append(decoded_url.strip())
+            endpoint = decoded_url.strip()
+            endpoints.append(endpoint)
+            # Send to forward proxy in background thread
+            send_to_proxy(endpoint)
 
             if args.resubmit_without_subs:
-                allSubs.add(getSubdomain(decoded_url.strip()))
+                allSubs.add(getSubdomain(endpoint))
 
         return endpoints
 
@@ -1064,7 +1274,7 @@ async def getResultsBaidu(page, endpoints):
         return endpoints
 
 
-async def getBaidu(browser, dork, semaphore):
+async def getBaidu(context, dork, semaphore):
     global stopProgram
     page = None
     endpoints = []
@@ -1165,15 +1375,18 @@ async def getResultsSeznam(page, endpoints):
         for a in a_tags:
             href = a.get('href')
             if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*seznam\.[^\/\.]{2,}', href):
-                endpoints.append(href.strip())
+                endpoint = href.strip()
+                endpoints.append(endpoint)
+                # Send to forward proxy in background thread
+                send_to_proxy(endpoint)
                 # If the same search is going to be resubmitted without subs, get the subdomain
                 if args.resubmit_without_subs:
-                    allSubs.add(getSubdomain(href.strip()))
+                    allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
         writerr(colored('ERROR getResultsSeznam 1: ' + str(e), 'red'))
 
-async def getSeznam(browser, dork, semaphore):
+async def getSeznam(context, dork, semaphore):
     global stopProgram
     page = None
     endpoints = []
@@ -1272,16 +1485,35 @@ async def savePageContents(source, page):
         writerr(colored(f'[ {source} ] Unable to save page contents: {str(e)}', 'cyan')) 
 
 async def processInput(dork):
-    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, stopProgram
+    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, stopProgram, proxy_sent_endpoints
     try:
+        # Clear proxy sent endpoints for this search
+        proxy_sent_endpoints.clear()
+        
+        # Start proxy forwarding thread if needed
+        start_proxy_thread()
         
         # Create a single browser instance
         async with async_playwright() as p:
+            # Configure request proxy if provided
+            proxy_config = None
+            context_options = {}
+            if args.request_proxy:
+                proxy_config = {"server": args.request_proxy}
+                context_options["ignore_https_errors"] = True
+                if verbose():
+                    writerr(colored(f'[ Request Proxy] Using browser request proxy: {args.request_proxy}', 'cyan'))
+            
             if args.show_browser:
-                browser = await p.firefox.launch(headless=False)
-                #browser = await p.chromium.launch(headless=False)
+                browser = await p.firefox.launch(headless=False, proxy=proxy_config)
             else:
-                browser = await p.firefox.launch(headless=True)
+                browser = await p.firefox.launch(headless=True, proxy=proxy_config)
+            
+            # Create a context with ignore HTTPS errors if using proxy
+            if args.request_proxy:
+                context = await browser.new_context(**context_options)
+            else:
+                context = await browser.new_context()
 
             # Define a dictionary to hold the results for each source
             resultsDict = {}
@@ -1298,23 +1530,23 @@ async def processInput(dork):
             # Check and add coroutines for any required sources
             try:
                 if 'duckduckgo' in sourcesToProcess:
-                    includedSources.append(getDuckDuckGo(browser, dork, semaphore))
+                    includedSources.append(getDuckDuckGo(context, dork, semaphore))
                 if 'bing' in sourcesToProcess:
-                    includedSources.append(getBing(browser, dork, semaphore))
+                    includedSources.append(getBing(context, dork, semaphore))
                 if 'startpage' in sourcesToProcess:
-                    includedSources.append(getStartpage(browser, dork, semaphore))
+                    includedSources.append(getStartpage(context, dork, semaphore))
                 if 'yahoo' in sourcesToProcess:
-                    includedSources.append(getYahoo(browser, dork, semaphore))
+                    includedSources.append(getYahoo(context, dork, semaphore))
                 if 'google' in sourcesToProcess:
-                    includedSources.append(getGoogle(browser, dork, semaphore))
+                    includedSources.append(getGoogle(context, dork, semaphore))
                 if 'yandex' in sourcesToProcess:
-                    includedSources.append(getYandex(browser, dork, semaphore))
+                    includedSources.append(getYandex(context, dork, semaphore))
                 if 'ecosia' in sourcesToProcess:
-                    includedSources.append(getEcosia(browser, dork, semaphore))
+                    includedSources.append(getEcosia(context, dork, semaphore))
                 if 'baidu' in sourcesToProcess:
-                    includedSources.append(getBaidu(browser, dork, semaphore))
+                    includedSources.append(getBaidu(context, dork, semaphore))
                 if 'seznam' in sourcesToProcess:
-                    includedSources.append(getSeznam(browser, dork, semaphore))
+                    includedSources.append(getSeznam(context, dork, semaphore))
             except:
                 pass
             
@@ -1361,9 +1593,13 @@ async def processInput(dork):
         writerr(colored('ERROR processInput 1: ' + str(e), 'red')) 
     finally:
         try:
+            if 'context' in locals():
+                await context.close()
             await browser.close()
         except:
             pass
+        # Stop proxy forwarding thread
+        stop_proxy_thread()
     
 async def processOutput():
     global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, sourcesToProcess
@@ -1441,16 +1677,6 @@ async def processOutput():
                 if vverbose():
                     writerr(colored("ERROR processOutput 2: " + str(e), "red"))    
         
-        # Initialize reusable session object for sending requests to the proxy
-        sendToProxy = False
-        if args.proxy:
-            proxies = {
-                        "http": args.proxy,
-                        "https": args.proxy,
-                    }
-            requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
-            sendToProxy = True
-            
         # Output all endpoints
         for endpoint in allEndpoints:
             try:
@@ -1463,23 +1689,6 @@ async def processOutput():
                         write(endpoint,True)
             except Exception as e:
                 writerr(colored('ERROR processOutput 6: Could not output links found - ' + str(e), 'red'))
-                    
-            # If the -proxy argument is passed, send the link to the specified proxy
-            if sendToProxy:
-                try:
-                    # Make the request
-                    resp = requests.get(
-                        endpoint,
-                        allow_redirects=True,
-                        verify=False,
-                        proxies=proxies,
-                        headers = {"User-Agent": "xnldorker by @xnl-h4ck3r"},
-                    )
-                    
-                except Exception as e:
-                    writerr(colored(f"[ Proxy ] Failed to send {endpoint} to proxy: {str(e)}", "red"))
-                    writerr(colored(f"[ Proxy ] Proxy disabled. Check value {args.proxy} is correct.", "red"))
-                    sendToProxy = False
             
         # Close the output file if it was opened
         try:
@@ -1520,8 +1729,10 @@ def showOptionsAndConfig():
         write(colored('-t: ' + str(args.timeout), 'magenta')+colored(' The browser timeout in seconds','white'))
         write(colored('-sb: ' + str(args.show_browser), 'magenta')+colored(' Whether the browser will be shown. If False, then headless mode is used.','white'))
         write(colored('-rwos: ' + str(args.resubmit_without_subs), 'magenta')+colored(' Whether the query will be resubmitted, but excluding the sub domains found in the first search.','white'))
-        if args.proxy:
-            write(colored('-proxy: ' + str(args.proxy), 'magenta')+colored(' The proxy to send found links to.','white'))
+        if args.forward_proxy:
+            write(colored('-fp: ' + str(args.forward_proxy), 'magenta')+colored(' The proxy to send found links to.','white'))
+        if args.request_proxy:
+            write(colored('-rp: ' + str(args.request_proxy), 'magenta')+colored(' The browser request proxy being used for searches.','white'))
         write(colored('Sources being checked: ', 'magenta')+str(sourcesToProcess))
         write('')
         
@@ -1636,9 +1847,17 @@ async def run_main():
         help='After the initial search, search again but exclude all subs found previously to get more links.',
     )
     parser.add_argument(
-        "-proxy",
+        "-fp",
+        "--forward-proxy",
         action="store",
-        help="Send the links found to a proxy, e.g http://127.0.0.1:8080",
+        help="Send the links found to a proxy such as Burp or Caido, e.g http://127.0.0.1:8080",
+        default="",
+    )
+    parser.add_argument(
+        "-rp",
+        "--request-proxy",
+        action="store",
+        help="Browser request proxy to use. Can be a proxy string (e.g. http://user:pass@1.2.3.4:8000, socks5://host:port) or a file containing proxy list (one per line, random selection)",
         default="",
     )
     parser.add_argument('--debug', action='store_true', help='Save page contents on error.')
@@ -1703,7 +1922,31 @@ async def run_main():
                     showBanner()
                 if verbose():
                     showOptionsAndConfig()
-                    
+                # Handle request proxy selection (file vs direct proxy)
+                if args.request_proxy:
+                    selected_proxy = selectRequestProxy(args.request_proxy)
+                    if selected_proxy:
+                        args.request_proxy = selected_proxy
+                        
+                        # Check if this looks like an intercepting proxy and warn user
+                        common_intercept_ports = ['8080', '8081', '8082', '9090', '3128']
+                        proxy_port = None
+                        if ':' in args.request_proxy:
+                            try:
+                                proxy_port = args.request_proxy.split(':')[-1]
+                            except:
+                                pass
+                        
+                        if proxy_port in common_intercept_ports:
+                            writerr(colored('⚠️  WARNING: You\'re using --request-proxy with what appears to be an intercepting proxy port.', 'yellow'))
+                            writerr(colored('   This routes ALL browser traffic through the proxy.', 'white'))
+                            writerr(colored('   If you want to send discovered endpoints to the proxy instead, use:', 'white'))
+                            writerr(colored(f'   --forward-proxy {args.request_proxy}', 'cyan'))
+                            writerr('')
+                    else:
+                        writerr(colored('ERROR: Failed to select request proxy, continuing without proxy', 'red'))
+                        args.request_proxy = ""    
+                
             # Process the input given on -i (--input), or <stdin>
             write(colored('Processing dork: ', 'cyan') + colored(inputDork, 'white'))
             await processInput(inputDork)

@@ -1,11 +1,11 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v2.1
+## About - v2.2
 
 This is a tool used to run a dork on different search sites.
 The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex, Ecosia, Baidu, Seznam**
 
-**IMPORTANT: This tool does not solve captchas at the moment, so it is advised you use the `-sb`/`--show-browser` argument and manually deal with the captchas to get best results.**
+**IMPORTANT: This tool does not solve captchas at the moment, so it is advised you use the `-sb`/`--show-browser` argument and manually deal with the captchas to get best results. DO NOT interact with the browser unless the CLI says to solve a Captcha.**
 
 **IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` (and/or `--exclude-source`) argument to specify the appropriate sources.**
 
@@ -56,7 +56,8 @@ pipx install git+https://github.com/xnl-h4ck3r/xnldorker.git
 | -t       | --timeout            | How many seconds to wait for the source to respond (default: 30 seconds)                                                                                                                                                                                      |
 | -sb      | --show-browser       | View the browser instead of using a headless browser. This has an advantage because if there is a known anti-bot mechanism, then it will pause for a set time (determined by `-abt`) so you can manually resolve it before `xnldorker` continues.             |
 | -abt     | --antibot-timeout    | How many seconds to wait when the `-sb` option was used and a known anti-bot mechanism is encountered (default: 90). This is the time you have to manually respond to the anti-bot mechanism before it tries to continue.                                     |
-| -proxy   |                      | Send the links found to a proxy, e.g `http://127.0.0.1:8080`.                                                                                                                                                                                                 |
+| -fp      | --forward-proxy      | Send the links found to a proxy such as Burp or Caido, e.g `http://127.0.0.1:8080`.                                                                                                                                                                           |
+| -rp      | --request-proxy      | Browser request proxy to use. Can be a proxy string (e.g. `http://user:pass@1.2.3.4:8000`, `socks5://host:port`) or a file containing proxy list (one per line, random selection).                                                                            |
 |          | --debug              | Save page contents on error.                                                                                                                                                                                                                                  |
 | -nb      | --no-banner          | Hides the tool banner (it is hidden by default if you pipe input to 'xnldorker') output.                                                                                                                                                                      |
 |          | --version            | Show current version number.                                                                                                                                                                                                                                  |
@@ -123,7 +124,7 @@ If you use the `--debug` option, then `xnldorker` will try to write a html file 
 
 ## TODO
 
-- Bing no longer works because of bit detection. Find a way around it.
+- Bing no longer works because of bot detection. Find a way around it.
 - Deal with an issue where sometimes the process can get `Killed` because it uses too much memory.
 - Identify anti bot mechanism pages on other sources (it's only on a few at the moment) so that `xnldorker` can pause to manually respond if the browser is being viewed.
 - Find our what search operators work on which sources and adjust the `--sources` automatically depending on which sources will get the expected results.
