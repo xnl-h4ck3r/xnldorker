@@ -1,5 +1,41 @@
 ## Changelog
 
+- v2.3
+
+  - New
+
+    - `-sb/--show-browser` argument now accepts optional values `tabs` or `windows`. Use `-sb windows` to open each source in a separate browser window instead of tabs. Default is `tabs` if no value specified.
+    - Tabs and windows now close automatically when each source completes (unless `--debug` is used). Use `--debug` flag to keep all tabs/windows open for inspection and debugging.
+    - If `--debug` is passed then keep all tabs or windows open until the user presses Enter to end the program. This lets you see the page the source stopped on.
+    - Add `xnldorker_*.html` to `.gitignore` to ignore any debug files created.
+    - Check for a different google captcha that appears with the text `detected unusual traffic from your computer`.
+    - Add some ant-bot measures to try and reduce detection.
+      - Added browser launch arguments to disable automation detection features like AutomationControlled
+      - Injected JavaScript to hide the navigator.webdriver property that browsers expose when controlled by automation
+      - Added realistic HTTP headers including Accept-Language, DNT, and proper Accept headers
+      - Set a consistent User-Agent across all contexts
+      - Added a small random delay (0.5-1.5 seconds) before navigation to appear more human-like
+      - More comprehensive JavaScript injections - hiding plugins, languages, chrome runtime, and permissions API
+
+  - Changed
+
+    - BUG FIX: Fixed memory leak issue when getting Google endpoints. This often led to the program getting `Killed` in the terminal.
+    - BUG FIX: If more than one source required a captcha to be submitted at the same time, it would only listen for the last source word in the terminal. Each source calling `wait_for_word_or_sleep()` would overwrite the previous stdin reader.
+    - BUG FIX: Improved error handling when browser windows are manually closed during searches. All sources now properly detect and log when the browser is closed, displaying messages like `"[ Source ] Search aborted - got X results"` instead of throwing raw errors.
+    - BUG FIX: Fixed inconsistent page creation across sources. All sources now correctly use `context.new_page()` instead of some using `browser.new_page()`.
+    - BUG FIX: Set explicit viewport size (1280x720) for browser context to prevent small black windows.
+    - BUG FIX: Browser and context are no longer closed when using `-sb/--show-browser`. The browser instance now stays open until the user manually closes it, preventing all windows from disappearing when searches complete.
+    - BUG FIX: Baidu was only checking for Captcha on the first page
+    - BUG FIX: Fixed an issue with Seznam source where it was timing out after pressing the Next button for the first time.
+    - BUG FIX: Sometimes Baidu threw the error `ERROR getBaidu: Page.query_selector_all: Execution context was destroyed, most likely because of a navigation` after clicking the next page.
+    - BUG FIX: Endpoints weren't correctly retrieved from a Bing page because they changed to site.
+    - Changed back from Firefox to Chromium browser engine for improved stability and reliability when using `-sb/--show-browser` option.
+    - Change help text for `--antibot-timeout` to show default value, and add the parameter when showing the options using `-v`.
+    - BUG FIX: Seznam was very very slow when not showing the browser. It is now the same speed regardless whether the browser is shown or not.
+    - Seznam - Only check further for links and clicking next if the text "Bohužel jsem nic nenašel" (Unfortunately I didn't find anything) isn't shown.
+    - Baidu - Only wait for the popup to disappear and check further for links and clicking next if the text "抱歉，未找到相关结果" (Sorry, no relevant results were found) isn't shown.
+    - If `--debug` was passed and a source is complete with 0 results, write the contents of the page to file so it can be checked for any potential problems.
+
 - v2.2
 
   - New
