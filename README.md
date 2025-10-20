@@ -5,11 +5,17 @@
 This is a tool used to run a dork on different search sites.
 The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex, Ecosia, Baidu, Seznam**
 
-**IMPORTANT: This tool does not solve captchas at the moment, so it is advised you use the `-sb`/`--show-browser` argument and manually deal with the captchas to get best results. DO NOT interact with the browser unless the CLI says to solve a Captcha, and ONLY solve the capture and don't click anything else.**
+**ℹ️ IMPORTANT: This tool does not solve captchas for you, so it is advised you use the `-sb`/`--show-browser` argument and manually deal with the captchas to get best results. DO NOT interact with the browser unless the CLI says to solve a Captcha, and ONLY solve the capture and don't click anything else!**
 
-**IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` (and/or `--exclude-source`) argument to specify the appropriate sources.**
+**ℹ️ IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` (and/or `--exclude-source`) argument to specify the appropriate sources.**
 
-**WARNING: If you use this tool a lot, then I guess there is the potential to get blocked on these source sites, so use sensibly. Using a VPN will help.**
+**ℹ️ KNOWN ISSUES:**
+
+- Bing does not like bots. If you show the browser you can solve the captcha and get one page of links but that's all for now.
+- Duckduckgo is fine if you show the browser, but if you try using headless mode it will get no links due to their bot detection.
+- Yandex shows a n insane number of captcha screens. If you show the browser, you can get a few pages of links before you get sick of solving them!
+
+**⚠️ WARNING: If you use this tool a lot, then I guess there is the potential to get blocked on these source sites, so use sensibly. Using a VPN will help.**
 
 ## Installation
 
