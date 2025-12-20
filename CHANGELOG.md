@@ -1,5 +1,18 @@
 ## Changelog
 
+- v3.0
+
+  - New
+
+    - Add Kagi search engine as a source. Kagi is a premium, ad-free search engine that focuses on privacy and quality results.
+    - Kagi search performs multiple passes with different parameters to maximize results, including Default, No Region, Verbatim, and Non-Personalized modes.
+    - Added a configuration system: `config.yml` is now used to store the `KAGI_SESSION_LINK`. This file is automatically created in the user's config directory during installation.
+    
+  - Changed
+
+    - Make changes to pass ruff and black checks.
+    - Update README.md to include Kagi search engine.
+
 - v2.3
 
   - New

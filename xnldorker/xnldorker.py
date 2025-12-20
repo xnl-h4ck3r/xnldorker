@@ -4,7 +4,6 @@
 # Full help here: https://github.com/xnl-h4ck3r/xnldorker/blob/main/README.md
 # Good luck and good hunting! If you really love the tool (or any others), or they helped you find an awesome bounty, consider BUYING ME A COFFEE! (https://ko-fi.com/xnlh4ck3r) ☕ (I could use the caffeine!)
 
-from ast import arg
 import requests
 import re
 import os
@@ -25,16 +24,29 @@ import time
 import random
 import threading
 import queue
+import yaml
+
 try:
     from . import __version__
-except:
+except Exception:
     pass
 
 # Available sources to search
-SOURCES = ['duckduckgo','bing','startpage','yahoo', 'google', 'yandex', 'ecosia', 'baidu', 'seznam']
+SOURCES = [
+    "duckduckgo",
+    "bing",
+    "startpage",
+    "yahoo",
+    "google",
+    "yandex",
+    "ecosia",
+    "baidu",
+    "seznam",
+    "kagi",
+]
 
-DEFAULT_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
 
 # Uer Agents
 UA_DESKTOP = [
@@ -54,15 +66,21 @@ UA_DESKTOP = [
     "Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:105.0) Gecko/20100101 Firefox/105.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
-    "Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0) like Gecko"
+    "Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0) like Gecko",
 ]
+
+# Default values if config.yml not found
+DEFAULT_KAGI_SESSION_LINK = ""
+
+# Variables to hold config.yml values
+KAGI_SESSION_LINK = ""
 
 # Global variables
 args = None
 browser = None
 stopProgram = False
 stopProgramCount = 0
-inputDork = ''
+inputDork = ""
 duckduckgoEndpoints = set()
 bingEndpoints = set()
 yahooEndpoints = set()
@@ -72,6 +90,7 @@ yandexEndpoints = set()
 ecosiaEndpoints = set()
 baiduEndpoints = set()
 seznamEndpoints = set()
+kagiEndpoints = set()
 allSubs = set()
 sourcesToProcess = []
 proxy_queue = None
@@ -79,38 +98,123 @@ proxy_thread = None
 proxy_session = None
 proxy_sent_endpoints = set()
 
+
 # Functions used when printing messages dependant on verbose options
 def verbose():
     return args.verbose or args.vverbose
+
+
 def vverbose():
     return args.vverbose
 
-def write(text='',pipe=False):
-    # Only send text to stdout if the tool isn't piped to pass output to something else, 
+
+def write(text="", pipe=False):
+    # Only send text to stdout if the tool isn't piped to pass output to something else,
     # or if the tool has been piped and the pipe parameter is True
     if sys.stdout.isatty() or (not sys.stdout.isatty() and pipe):
-        sys.stdout.write(text+'\n')
+        sys.stdout.write(text + "\n")
 
-def writerr(text=''):
-    # Only send text to stdout if the tool isn't piped to pass output to something else, 
+
+def writerr(text=""):
+    # Only send text to stdout if the tool isn't piped to pass output to something else,
     # or If the tool has been piped to output the send to stderr
     if sys.stdout.isatty():
-        sys.stdout.write(text+'\n')
+        sys.stdout.write(text + "\n")
     else:
-        sys.stderr.write(text+'\n')
+        sys.stderr.write(text + "\n")
+
+
+def getConfig():
+    """
+    Try to get the values from the config file, otherwise use the defaults
+    """
+    global KAGI_SESSION_LINK
+    try:
+
+        # Try to get the config file values
+        try:
+            # Put config in global location based on the OS.
+            xnldorkerPath = (
+                Path(os.path.join(os.getenv("APPDATA", ""), "xnldorker"))
+                if os.name == "nt"
+                else (
+                    Path(os.path.join(os.path.expanduser("~"), ".config", "xnldorker"))
+                    if os.name == "posix"
+                    else (
+                        Path(
+                            os.path.join(
+                                os.path.expanduser("~"),
+                                "Library",
+                                "Application Support",
+                                "xnldorker",
+                            )
+                        )
+                        if os.name == "darwin"
+                        else None
+                    )
+                )
+            )
+
+            xnldorkerPath.absolute()
+            if xnldorkerPath == "":
+                configPath = "config.yml"
+            else:
+                configPath = Path(xnldorkerPath / "config.yml")
+            config = yaml.safe_load(open(configPath))
+
+            try:
+                KAGI_SESSION_LINK = config.get("KAGI_SESSION_LINK")
+                if str(KAGI_SESSION_LINK) == "None":
+                    KAGI_SESSION_LINK = DEFAULT_KAGI_SESSION_LINK
+            except Exception:
+                writerr(
+                    colored(
+                        "Unable to read KAGI_SESSION_LINK from config.yml - default set",
+                        "red",
+                    )
+                )
+                KAGI_SESSION_LINK = DEFAULT_KAGI_SESSION_LINK
+
+        except Exception:
+            # writerr(colored('WARNING: Cannot find file "config.yml", so using default values', 'yellow'))
+            KAGI_SESSION_LINK = DEFAULT_KAGI_SESSION_LINK
+
+    except Exception as e:
+        writerr(colored("ERROR getConfig 1: " + str(e), "red"))
+
 
 def showVersion():
     try:
         try:
-            resp = requests.get('https://raw.githubusercontent.com/xnl-h4ck3r/xnldorker/main/xnldorker/__init__.py',timeout=3)
-        except:
-            write('Current xnldorker version '+__version__+' (unable to check if latest)\n')
-        if __version__ == resp.text.split('=')[1].replace('"','').strip():
-            write('Current xnldorker version '+__version__+' ('+colored('latest','green')+')\n')
+            resp = requests.get(
+                "https://raw.githubusercontent.com/xnl-h4ck3r/xnldorker/main/xnldorker/__init__.py",
+                timeout=3,
+            )
+        except Exception:
+            write(
+                "Current xnldorker version "
+                + __version__
+                + " (unable to check if latest)\n"
+            )
+        if __version__ == resp.text.split("=")[1].replace('"', "").strip():
+            write(
+                "Current xnldorker version "
+                + __version__
+                + " ("
+                + colored("latest", "green")
+                + ")\n"
+            )
         else:
-            write('Current xnldorker version '+__version__+' ('+colored('outdated','red')+')\n')
-    except:
+            write(
+                "Current xnldorker version "
+                + __version__
+                + " ("
+                + colored("outdated", "red")
+                + ")\n"
+            )
+    except Exception:
         pass
+
 
 def selectRequestProxy(proxy_input):
     """
@@ -118,51 +222,63 @@ def selectRequestProxy(proxy_input):
     """
     try:
         if os.path.isfile(os.path.expanduser(proxy_input)):
-            with open(os.path.expanduser(proxy_input), 'r') as f:
+            with open(os.path.expanduser(proxy_input), "r") as f:
                 proxies = [line.strip() for line in f if line.strip()]
             if proxies:
                 selected_proxy = random.choice(proxies)
                 return selected_proxy
             else:
-                writerr(colored('ERROR: Request proxy file is empty', 'red'))
+                writerr(colored("ERROR: Request proxy file is empty", "red"))
                 return None
         else:
             return proxy_input
     except Exception as e:
-        writerr(colored(f'ERROR selectRequestProxy: {str(e)}', 'red'))
+        writerr(colored(f"ERROR selectRequestProxy: {str(e)}", "red"))
         return None
+
 
 def proxy_worker():
     """
     Worker thread function to send endpoints to forward proxy
     """
     global proxy_queue, proxy_session, stopProgram
-    
+
     while not stopProgram:
         try:
             # Get endpoint from queue with timeout
             endpoint = proxy_queue.get(timeout=1)
             if endpoint is None:  # Sentinel value to stop thread
                 break
-                
+
             try:
                 # Send to proxy
-                resp = proxy_session.get(
+                proxy_session.get(
                     endpoint,
                     allow_redirects=True,
                     verify=False,
                     headers={"User-Agent": "xnldorker by @xnl-h4ck3r"},
-                    timeout=10
+                    timeout=10,
                 )
                 if vverbose():
-                    writerr(colored(f"[ Forward Proxy ] Sent {endpoint}", 'green', attrs=['dark']))
-                    
+                    writerr(
+                        colored(
+                            f"[ Forward Proxy ] Sent {endpoint}",
+                            "green",
+                            attrs=["dark"],
+                        )
+                    )
+
             except Exception as e:
                 if verbose():
-                    writerr(colored(f"[ Forward Proxy ] Failed to send {endpoint}: {str(e)}", "yellow"))
-                    
+                    writerr(
+                        colored(
+                            f"[ Forward Proxy ] Failed to send {endpoint}: {str(e)}",
+                            "yellow",
+                        )
+                    )
+
             proxy_queue.task_done()
-            
+
         except queue.Empty:
             continue
         except Exception as e:
@@ -170,15 +286,16 @@ def proxy_worker():
                 writerr(colored(f"[ Forward Proxy ] Worker error: {str(e)}", "red"))
             break
 
+
 def start_proxy_thread():
     """
     Initialize and start the proxy forwarding thread
     """
     global proxy_queue, proxy_thread, proxy_session
-    
+
     if not args.forward_proxy:
         return
-        
+
     try:
         # Initialize queue and session
         proxy_queue = queue.Queue()
@@ -188,23 +305,29 @@ def start_proxy_thread():
             "https": args.forward_proxy,
         }
         requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
-        
+
         # Start worker thread
         proxy_thread = threading.Thread(target=proxy_worker, daemon=True)
         proxy_thread.start()
-        
+
         if verbose():
-            writerr(colored(f'[ Forward Proxy ] Started background thread for {args.forward_proxy}', 'cyan'))
-            
+            writerr(
+                colored(
+                    f"[ Forward Proxy ] Started background thread for {args.forward_proxy}",
+                    "cyan",
+                )
+            )
+
     except Exception as e:
-        writerr(colored(f'ERROR start_proxy_thread: {str(e)}', 'red'))
+        writerr(colored(f"ERROR start_proxy_thread: {str(e)}", "red"))
+
 
 def stop_proxy_thread():
     """
     Stop the proxy forwarding thread gracefully
     """
     global proxy_queue, proxy_thread, proxy_sent_endpoints
-    
+
     if proxy_queue and proxy_thread:
         try:
             # Send sentinel value to stop worker
@@ -214,17 +337,23 @@ def stop_proxy_thread():
             if verbose():
                 sent_count = len(proxy_sent_endpoints)
                 if sent_count > 0:
-                    writerr(colored(f'[ Forward Proxy ] Sent {sent_count} unique endpoints to proxy', 'cyan'))
+                    writerr(
+                        colored(
+                            f"[ Forward Proxy ] Sent {sent_count} unique endpoints to proxy",
+                            "cyan",
+                        )
+                    )
         except Exception as e:
             if verbose():
-                writerr(colored(f'ERROR stop_proxy_thread: {str(e)}', 'red'))
+                writerr(colored(f"ERROR stop_proxy_thread: {str(e)}", "red"))
+
 
 def send_to_proxy(endpoint):
     """
     Add endpoint to proxy queue for background processing (with deduplication)
     """
     global proxy_queue, proxy_sent_endpoints
-    
+
     if proxy_queue and args.forward_proxy:
         try:
             # Only send if we haven't sent this endpoint before
@@ -233,18 +362,20 @@ def send_to_proxy(endpoint):
                 proxy_queue.put(endpoint)
         except Exception as e:
             if verbose():
-                writerr(colored(f'ERROR send_to_proxy: {str(e)}', 'red'))
-      
+                writerr(colored(f"ERROR send_to_proxy: {str(e)}", "red"))
+
+
 def showBanner():
-    writerr('')
-    writerr(colored(r'            _     _            _', 'red'))
-    writerr(colored(r'__  ___ __ | | __| | ___  _ __| | _____ _ __', 'yellow'))
-    writerr(colored(r"\ \/ / '_ \| |/ _` |/ _ \| '__| |/ / _ \ '__|", 'green'))
-    writerr(colored(r' >  <| | | | | (_| | (_) | |  |   <  __/ |', 'cyan'))
-    writerr(colored(r'/_/\_\_| |_|_|\__,_|\___/|_|  |_|\_\___|_|', 'magenta'))
-    writerr(colored('                             by Xnl-h4ck3r','white'))
-    writerr('')
+    writerr("")
+    writerr(colored(r"            _     _            _", "red"))
+    writerr(colored(r"__  ___ __ | | __| | ___  _ __| | _____ _ __", "yellow"))
+    writerr(colored(r"\ \/ / '_ \| |/ _` |/ _ \| '__| |/ / _ \ '__|", "green"))
+    writerr(colored(r" >  <| | | | | (_| | (_) | |  |   <  __/ |", "cyan"))
+    writerr(colored(r"/_/\_\_| |_|_|\__,_|\___/|_|  |_|\_\___|_|", "magenta"))
+    writerr(colored("                             by Xnl-h4ck3r", "white"))
+    writerr("")
     showVersion()
+
 
 def handler(signal_received, frame):
     """
@@ -256,69 +387,109 @@ def handler(signal_received, frame):
     if stopProgram:
         stopProgramCount = stopProgramCount + 1
         if stopProgramCount == 1:
-            writerr(colored('>>> Please be patient... Trying to save data and end gracefully!','red'))
+            writerr(
+                colored(
+                    ">>> Please be patient... Trying to save data and end gracefully!",
+                    "red",
+                )
+            )
         elif stopProgramCount == 2:
-            writerr(colored('>>> SERIOUSLY... YOU DON\'T WANT YOUR DATA SAVED?!','red'))
+            writerr(colored(">>> SERIOUSLY... YOU DON'T WANT YOUR DATA SAVED?!", "red"))
         elif stopProgramCount == 3:
-            writerr(colored('>>> Patience isn\'t your strong suit eh? ¯\_(ツ)_/¯','red'))
+            writerr(
+                colored(">>> Patience isn't your strong suit eh? ¯\_(ツ)_/¯", "red")
+            )
             sys.exit()
     else:
         stopProgram = True
-        writerr(colored('>>> "Oh my God, they killed Kenny... and xnldorker!" - Kyle',"red"))
-        writerr(colored('>>> Attempting to rescue any data gathered so far...', "red"))
+        writerr(
+            colored(
+                '>>> "Oh my God, they killed Kenny... and xnldorker!" - Kyle', "red"
+            )
+        )
+        writerr(colored(">>> Attempting to rescue any data gathered so far...", "red"))
+
 
 def detect_proxy_type_error(proxy_url, error_msg):
     """
     Detect if user is trying to use HTTP intercepting proxy as request proxy
     """
     # Check for common intercepting proxy ports and SSL errors
-    common_intercept_ports = ['8080', '8081', '8082', '9090', '3128']
-    ssl_errors = ['SEC_ERROR_UNKNOWN_ISSUER', 'SSL_ERROR', 'CERT_', 'certificate', 'TLS']
-    
+    common_intercept_ports = ["8080", "8081", "8082", "9090", "3128"]
+    ssl_errors = [
+        "SEC_ERROR_UNKNOWN_ISSUER",
+        "SSL_ERROR",
+        "CERT_",
+        "certificate",
+        "TLS",
+    ]
+
     # Extract port from proxy URL
     proxy_port = None
-    if ':' in proxy_url:
+    if ":" in proxy_url:
         try:
-            proxy_port = proxy_url.split(':')[-1]
-        except:
+            proxy_port = proxy_url.split(":")[-1]
+        except Exception:
             pass
-    
+
     # Check if this looks like an intercepting proxy issue
     is_common_port = proxy_port in common_intercept_ports
     is_ssl_error = any(ssl_term in error_msg.upper() for ssl_term in ssl_errors)
-    
-    if is_common_port and is_ssl_error or 'NS_ERROR_UNKNOWN_PROXY_HOST' in error_msg:
+
+    if is_common_port and is_ssl_error or "NS_ERROR_UNKNOWN_PROXY_HOST" in error_msg:
         return True
     return False
+
 
 def show_proxy_usage_hint(proxy_url):
     """
     Show helpful message about proxy usage
     """
-    writerr(colored('━' * 60, 'yellow'))
-    writerr(colored('💡 PROXY USAGE HINT:', 'yellow', attrs=['bold']))
-    writerr(colored('It looks like you might be using an HTTP intercepting proxy (like Caido/Burp Suite)', 'white'))
-    writerr(colored('as a --request-proxy. This typically doesn\'t work as expected.', 'white'))
-    writerr('')
-    writerr(colored('For intercepting proxies, use --forward-proxy instead:', 'cyan'))
-    writerr(colored(f'  --forward-proxy {proxy_url}', 'green'))
-    writerr('')
-    writerr(colored('Proxy Usage Guide:', 'white', attrs=['bold']))
-    writerr(colored('• --request-proxy: For routing browser traffic (VPNs, SOCKS proxies)', 'white'))
-    writerr(colored('• --forward-proxy: For sending found endpoints to Caido/Burp/etc.', 'white'))
-    writerr(colored('━' * 60, 'yellow'))
+    writerr(colored("━" * 60, "yellow"))
+    writerr(colored("💡 PROXY USAGE HINT:", "yellow", attrs=["bold"]))
+    writerr(
+        colored(
+            "It looks like you might be using an HTTP intercepting proxy (like Caido/Burp Suite)",
+            "white",
+        )
+    )
+    writerr(
+        colored(
+            "as a --request-proxy. This typically doesn't work as expected.", "white"
+        )
+    )
+    writerr("")
+    writerr(colored("For intercepting proxies, use --forward-proxy instead:", "cyan"))
+    writerr(colored(f"  --forward-proxy {proxy_url}", "green"))
+    writerr("")
+    writerr(colored("Proxy Usage Guide:", "white", attrs=["bold"]))
+    writerr(
+        colored(
+            "• --request-proxy: For routing browser traffic (VPNs, SOCKS proxies)",
+            "white",
+        )
+    )
+    writerr(
+        colored(
+            "• --forward-proxy: For sending found endpoints to Caido/Burp/etc.", "white"
+        )
+    )
+    writerr(colored("━" * 60, "yellow"))
+
 
 def getSubdomain(url):
     try:
-        # Just get the hostname of the url 
+        # Just get the hostname of the url
         tldExtract = tldextract.extract(url)
         return tldExtract.subdomain
     except Exception as e:
-        writerr(colored('ERROR getSubdomain 1: ' + str(e), 'red')) 
+        writerr(colored("ERROR getSubdomain 1: " + str(e), "red"))
+
 
 # Global dictionary to track all active captcha waits
 _active_captcha_waits = {}
 _stdin_reader_active = False
+
 
 async def wait_for_word_or_sleep(word, timeout):
     """
@@ -326,10 +497,10 @@ async def wait_for_word_or_sleep(word, timeout):
     Supports multiple sources waiting for different words simultaneously.
     """
     global _active_captcha_waits, _stdin_reader_active
-    
+
     loop = asyncio.get_event_loop()
     word_entered = asyncio.Event()
-    
+
     # Register this word in the active waits
     _active_captcha_waits[word] = word_entered
 
@@ -340,7 +511,7 @@ async def wait_for_word_or_sleep(word, timeout):
             # Check if the input matches any of the active waits
             if input_text in _active_captcha_waits:
                 _active_captcha_waits[input_text].set()
-        except:
+        except Exception:
             pass
 
     # Only add the reader if it's not already active
@@ -356,7 +527,7 @@ async def wait_for_word_or_sleep(word, timeout):
         # Remove this word from active waits
         if word in _active_captcha_waits:
             del _active_captcha_waits[word]
-        
+
         # Only remove the reader if no more waits are active
         if not _active_captcha_waits and _stdin_reader_active:
             loop.remove_reader(sys.stdin.fileno())
@@ -370,25 +541,26 @@ async def get_or_create_context(context_param):
     In 'tabs' mode or headless, returns the shared context.
     Returns tuple of (context, should_close_context)
     """
-    if context_param is None and args.show_browser == 'windows':
+    if context_param is None and args.show_browser == "windows":
         # Windows mode - create a new context for this source
         context_options = {}
         if args.request_proxy:
-            context_options['ignore_https_errors'] = True
-        context_options['viewport'] = {'width': 1280, 'height': 720}
-        context_options['user_agent'] = DEFAULT_USER_AGENT
+            context_options["ignore_https_errors"] = True
+        context_options["viewport"] = {"width": 1280, "height": 720}
+        context_options["user_agent"] = DEFAULT_USER_AGENT
         # Add extra headers to avoid bot detection
-        context_options['extra_http_headers'] = {
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
+        context_options["extra_http_headers"] = {
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
         }
         new_context = await browser.new_context(**context_options)
         # Inject script to hide webdriver property and other automation indicators
-        await new_context.add_init_script("""
+        await new_context.add_init_script(
+            """
             // Hide webdriver
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
@@ -416,23 +588,31 @@ async def get_or_create_context(context_param):
                     Promise.resolve({ state: Notification.permission }) :
                     originalQuery(parameters)
             );
-        """)
+        """
+        )
         return new_context, True
     else:
         # Tabs mode or headless - use the shared context
         return context_param, False
-              
+
+
 async def getResultsDuckDuckGo(page, endpoints):
     global allSubs
     try:
         content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
-        div_content = soup.find('div', id='web_content_wrapper')
+        soup = BeautifulSoup(content, "html.parser")
+        div_content = soup.find("div", id="web_content_wrapper")
         if div_content:
-            a_tags = div_content.find_all('a')
+            a_tags = div_content.find_all("a")
             for a in a_tags:
-                href = a.get('href')
-                if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*duckduckgo\.[^\/\.]{2,}', href):
+                href = a.get("href")
+                if (
+                    href
+                    and href.startswith("http")
+                    and not re.match(
+                        r"^https?:\/\/([\w-]+\.)*duckduckgo\.[^\/\.]{2,}", href
+                    )
+                ):
                     endpoint = href.strip()
                     endpoints.append(endpoint)
                     # Send to forward proxy in background thread
@@ -442,8 +622,9 @@ async def getResultsDuckDuckGo(page, endpoints):
                         allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
-        writerr(colored('ERROR getResultsDuckDuckGo 1: ' + str(e), 'red')) 
-        
+        writerr(colored("ERROR getResultsDuckDuckGo 1: " + str(e), "red"))
+
+
 async def getDuckDuckGo(context, dork, semaphore):
     global stopProgram
     source_context = None
@@ -452,73 +633,103 @@ async def getDuckDuckGo(context, dork, semaphore):
         endpoints = []
         page = None
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
-        
+
         # Add small random delay to appear more human-like
         await asyncio.sleep(random.uniform(0.5, 1.5))
-        
+
         if verbose():
-            writerr(colored('[ DuckDuckGo ] Starting...', 'green'))
-        
+            writerr(colored("[ DuckDuckGo ] Starting...", "green"))
+
         # Call with parameters:
         #  kc=-1 - Don't auto load images
-        await page.goto(f'https://duckduckgo.com/?kc=-1&ia=web&q={dork}', timeout=args.timeout*1000)
+        await page.goto(
+            f"https://duckduckgo.com/?kc=-1&ia=web&q={dork}",
+            timeout=args.timeout * 1000,
+        )
         pageNo = 1
-        
+
         # If captcha is shown then allow time to submit it
-        captcha = await page.query_selector('#anomaly-modal__modal.anomaly-modal__modal')
+        captcha = await page.query_selector(
+            "#anomaly-modal__modal.anomaly-modal__modal"
+        )
         if captcha:
             if args.show_browser:
-                writerr(colored(f'[ DuckDuckGo ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "duckduckgo" and press ENTER...','yellow')) 
+                writerr(
+                    colored(
+                        f'[ DuckDuckGo ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "duckduckgo" and press ENTER...',
+                        "yellow",
+                    )
+                )
                 await wait_for_word_or_sleep("duckduckgo", args.antibot_timeout)
-                writerr(colored(f'[ DuckDuckGo ] Resuming...', 'green'))
+                writerr(colored("[ DuckDuckGo ] Resuming...", "green"))
             else:
-                writerr(colored('[ DuckDuckGo ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                writerr(
+                    colored(
+                        "[ DuckDuckGo ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                        "red",
+                    )
+                )
                 return set(endpoints)
-        
+
         try:
             # Wait for the search results to be fully loaded and have links
-            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+            await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
         except Exception as wait_e:
-            if 'Target page, context or browser has been closed' in str(wait_e):
+            if "Target page, context or browser has been closed" in str(wait_e):
                 raise
             pass
 
-        captcha = await page.query_selector('#anomaly-modal__modal.anomaly-modal__modal')
+        captcha = await page.query_selector(
+            "#anomaly-modal__modal.anomaly-modal__modal"
+        )
         if captcha:
-            writerr(colored('[ DuckDuckGo ] Failed to complete reCAPTCHA','red'))
+            writerr(colored("[ DuckDuckGo ] Failed to complete reCAPTCHA", "red"))
             return set(endpoints)
-               
+
         # Function to check if the button is disabled and enable it if necessary
         async def enable_more_results():
-            more_results_button = await page.query_selector('#more-results')
+            more_results_button = await page.query_selector("#more-results")
             if more_results_button:
-                is_disabled = await more_results_button.evaluate('(element) => element.disabled')
+                is_disabled = await more_results_button.evaluate(
+                    "(element) => element.disabled"
+                )
                 if is_disabled:
-                    await page.evaluate('(element) => element.disabled = false', more_results_button)
+                    await page.evaluate(
+                        "(element) => element.disabled = false", more_results_button
+                    )
 
         # Function to check for the presence of the button and click it if available
         async def click_more_results():
-            if await page.query_selector('#more-results'):
-                await page.click('#more-results')
-                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+            if await page.query_selector("#more-results"):
+                await page.click("#more-results")
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
 
         # Loop to repeatedly check for the button and click it until it doesn't exist
-        while await page.query_selector('#more-results'):
+        while await page.query_selector("#more-results"):
             if stopProgram:
                 break
             await enable_more_results()
             if vverbose():
                 pageNo += 1
-                writerr(colored('[ DuckDuckGo ] Clicking "More Results" button to display page '+str(pageNo), 'green', attrs=['dark'])) 
+                writerr(
+                    colored(
+                        '[ DuckDuckGo ] Clicking "More Results" button to display page '
+                        + str(pageNo),
+                        "green",
+                        attrs=["dark"],
+                    )
+                )
             await click_more_results()
             # Get the results so far, just in case it ends early
-            endpoints =  await getResultsDuckDuckGo(page, endpoints)
+            endpoints = await getResultsDuckDuckGo(page, endpoints)
 
         # Get all the results
         endpoints = await getResultsDuckDuckGo(page, endpoints)
@@ -526,24 +737,43 @@ async def getDuckDuckGo(context, dork, semaphore):
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('DuckDuckGo',page)
-            writerr(colored(f'[ DuckDuckGo ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+                await savePageContents("DuckDuckGo", page)
+            writerr(
+                colored(
+                    f"[ DuckDuckGo ] Complete! {str(noOfEndpoints)} endpoints found",
+                    "green",
+                )
+            )
         return setEndpoints
-     
+
     except Exception as e:
-        noOfEndpoints  = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ DuckDuckGo ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ DuckDuckGo ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ DuckDuckGo ] Page timed out - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ DuckDuckGo ] Search aborted - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
         else:
-            writerr(colored('[ DuckDuckGo ] ERROR getDuckDuckGo 1: ' + str(e), 'red'))
+            writerr(colored("[ DuckDuckGo ] ERROR getDuckDuckGo 1: " + str(e), "red"))
             # Check if this looks like a proxy type error and show helpful hint
-            if args.request_proxy and detect_proxy_type_error(args.request_proxy, str(e)):
-                show_proxy_usage_hint(args.request_proxy)  
+            if args.request_proxy and detect_proxy_type_error(
+                args.request_proxy, str(e)
+            ):
+                show_proxy_usage_hint(args.request_proxy)
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
-            await savePageContents('DuckDuckGo',page)
+            await savePageContents("DuckDuckGo", page)
         return set(endpoints)
     finally:
         try:
@@ -554,46 +784,60 @@ async def getDuckDuckGo(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
-        
+
+
 def extractBingEndpoints(soup):
     global allSubs
     try:
         import base64
+
         endpoints = []
         # Find all b_algo elements
-        b_algo_elements = soup.find_all('li', class_='b_algo')
+        b_algo_elements = soup.find_all("li", class_="b_algo")
         for element in b_algo_elements:
             # Find links within each b_algo element
-            a_tags = element.find_all('a', href=True)
+            a_tags = element.find_all("a", href=True)
             for a in a_tags:
-                href = a.get('href')
+                href = a.get("href")
                 if href:
                     # Check if it's a Bing redirect URL
-                    if '/ck/a?' in href or 'bing.com/ck/a?' in href:
+                    if "/ck/a?" in href or "bing.com/ck/a?" in href:
                         # Parse the URL to extract the 'u' parameter
                         parsed = urlparse(href)
                         params = parse_qs(parsed.query)
-                        if 'u' in params:
-                            encoded_url = params['u'][0]
+                        if "u" in params:
+                            encoded_url = params["u"][0]
                             # Decode the custom base64-like encoding
                             # Remove the 'a1' prefix if present
-                            if encoded_url.startswith('a1'):
+                            if encoded_url.startswith("a1"):
                                 encoded_url = encoded_url[2:]
                             # URL decode it
                             try:
-                                padding = '=' * (4 - len(encoded_url) % 4) if len(encoded_url) % 4 else ''
-                                decoded_url = base64.b64decode(encoded_url + padding).decode('utf-8', errors='ignore')
-                                if decoded_url.startswith('http'):
+                                padding = (
+                                    "=" * (4 - len(encoded_url) % 4)
+                                    if len(encoded_url) % 4
+                                    else ""
+                                )
+                                decoded_url = base64.b64decode(
+                                    encoded_url + padding
+                                ).decode("utf-8", errors="ignore")
+                                if decoded_url.startswith("http"):
                                     endpoint = decoded_url.strip()
                                     endpoints.append(endpoint)
                                     send_to_proxy(endpoint)
                                     if args.resubmit_without_subs:
                                         allSubs.add(getSubdomain(endpoint))
-                            except:
+                            except Exception:
                                 pass
-                    elif href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*bing\.[^\/\.]{2,}', href) and not re.match(r'^https?:\/\/go\.microsoft\.com', href):
+                    elif (
+                        href.startswith("http")
+                        and not re.match(
+                            r"^https?:\/\/([\w-]+\.)*bing\.[^\/\.]{2,}", href
+                        )
+                        and not re.match(r"^https?:\/\/go\.microsoft\.com", href)
+                    ):
                         # Direct URL (fallback)
                         endpoint = href.strip()
                         endpoints.append(endpoint)
@@ -602,8 +846,9 @@ def extractBingEndpoints(soup):
                             allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
-        writerr(colored('ERROR extractBingEndpoints 1: ' + str(e), 'red')) 
-        
+        writerr(colored("ERROR extractBingEndpoints 1: " + str(e), "red"))
+
+
 async def getBing(context, dork, semaphore):
     source_context = None
     should_close_context = False
@@ -611,37 +856,50 @@ async def getBing(context, dork, semaphore):
         endpoints = []
         page = None
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
-        
+
         if verbose():
-            writerr(colored('[ Bing ] Starting...', 'green'))
-            
-        await page.goto(f'https://www.bing.com/search?q={dork}&pq={dork}&qs=n', timeout=args.timeout*1000)
+            writerr(colored("[ Bing ] Starting...", "green"))
+
+        await page.goto(
+            f"https://www.bing.com/search?q={dork}&pq={dork}&qs=n",
+            timeout=args.timeout * 1000,
+        )
 
         # If captcha is shown then allow time to submit it
         content = await page.content()
         if "One last step" in content:
             if args.show_browser:
-                writerr(colored(f'[ Bing ] Cloudflare Captcha needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "bing" and press ENTER...','yellow')) 
+                writerr(
+                    colored(
+                        f'[ Bing ] Cloudflare Captcha needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "bing" and press ENTER...',
+                        "yellow",
+                    )
+                )
                 await wait_for_word_or_sleep("bing", args.antibot_timeout)
-                writerr(colored(f'[ Bing ] Resuming...', 'green'))
+                writerr(colored("[ Bing ] Resuming...", "green"))
             else:
-                writerr(colored('[ Bing ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                writerr(
+                    colored(
+                        "[ Bing ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                        "red",
+                    )
+                )
                 return set(endpoints)
-            
+
         # Check if the cookie banner exists and click reject if it does
-        if await page.query_selector('#bnp_btn_reject'):
+        if await page.query_selector("#bnp_btn_reject"):
             # Click the button to reject
-            await page.click('#bnp_btn_reject')
-            
+            await page.click("#bnp_btn_reject")
+
         # Collect endpoints from the initial page
         content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
+        soup = BeautifulSoup(content, "html.parser")
         pageNo = 1
         endpoints = extractBingEndpoints(soup)
 
@@ -652,14 +910,22 @@ async def getBing(context, dork, semaphore):
             # Find the link with the title "Next page"
             if await page.query_selector('a[title="Next page"]'):
                 await page.click('a[title="Next page"]')
-                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
                 pageNo += 1
                 if vverbose():
-                    writerr(colored('[ Bing ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
-                
+                    writerr(
+                        colored(
+                            "[ Bing ] Getting endpoints from page " + str(pageNo),
+                            "green",
+                            attrs=["dark"],
+                        )
+                    )
+
                 # Collect endpoints from the current page
                 content = await page.content()
-                soup = BeautifulSoup(content, 'html.parser')
+                soup = BeautifulSoup(content, "html.parser")
                 endpoints += extractBingEndpoints(soup)
             else:
                 # No "Next page" link found, exit the loop
@@ -673,21 +939,35 @@ async def getBing(context, dork, semaphore):
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('Bing',page)
-            writerr(colored(f'[ Bing ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+                await savePageContents("Bing", page)
+            writerr(
+                colored(
+                    f"[ Bing ] Complete! {str(noOfEndpoints)} endpoints found", "green"
+                )
+            )
         return setEndpoints
-    
+
     except Exception as e:
-        noOfEndpoints  = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ Bing ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Bing ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ Bing ] Page timed out - got {str(noOfEndpoints)} results", "red"
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ Bing ] Search aborted - got {str(noOfEndpoints)} results", "red"
+                )
+            )
         else:
-            writerr(colored('[ Bing ] ERROR getBing 1: ' + str(e), 'red')) 
+            writerr(colored("[ Bing ] ERROR getBing 1: " + str(e), "red"))
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
-            await savePageContents('Bing',page)
+            await savePageContents("Bing", page)
         return set(endpoints)
     finally:
         try:
@@ -698,17 +978,22 @@ async def getBing(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
-        
+
+
 def extractStartpageEndpoints(soup):
     global allSubs
     try:
         endpoints = []
-        result_links = soup.find_all('a', class_=re.compile('.*result-link.*'))
+        result_links = soup.find_all("a", class_=re.compile(".*result-link.*"))
         for link in result_links:
-            href = link.get('href')
-            if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*startpage\.[^\/\.]{2,}', href):
+            href = link.get("href")
+            if (
+                href
+                and href.startswith("http")
+                and not re.match(r"^https?:\/\/([\w-]+\.)*startpage\.[^\/\.]{2,}", href)
+            ):
                 endpoint = href.strip()
                 endpoints.append(endpoint)
                 # Send to forward proxy in background thread
@@ -718,8 +1003,9 @@ def extractStartpageEndpoints(soup):
                     allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
-        writerr(colored('ERROR extractStartpageEndpoints 1: ' + str(e), 'red')) 
-        
+        writerr(colored("ERROR extractStartpageEndpoints 1: " + str(e), "red"))
+
+
 async def getStartpage(context, dork, semaphore):
     source_context = None
     should_close_context = False
@@ -727,66 +1013,84 @@ async def getStartpage(context, dork, semaphore):
         endpoints = []
         page = None
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
-        
+
         if verbose():
-            writerr(colored('[ Startpage ] Starting...', 'green'))
-            
-        await page.goto(f'https://www.startpage.com/', timeout=args.timeout*1000)
-        
+            writerr(colored("[ Startpage ] Starting...", "green"))
+
+        await page.goto("https://www.startpage.com/", timeout=args.timeout * 1000)
+
         # Wait for the search results to be fully loaded
-        await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-        
+        await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
+
         # Check if bot detection is shown
-        if '/sp/captcha' in page.url:
+        if "/sp/captcha" in page.url:
             if args.show_browser:
-                writerr(colored(f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "startpage" and press ENTER...','yellow')) 
+                writerr(
+                    colored(
+                        f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "startpage" and press ENTER...',
+                        "yellow",
+                    )
+                )
                 await wait_for_word_or_sleep("startpage", args.antibot_timeout)
-                writerr(colored(f'[ Startpage ] Resuming...', 'green'))
+                writerr(colored("[ Startpage ] Resuming...", "green"))
             else:
-                writerr(colored('[ Startpage ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                writerr(
+                    colored(
+                        "[ Startpage ] CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                        "red",
+                    )
+                )
                 return set(endpoints)
 
         try:
             # Wait for the search results to be fully loaded and have links
-            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+            await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
         except Exception as wait_e:
-            if 'Target page, context or browser has been closed' in str(wait_e):
+            if "Target page, context or browser has been closed" in str(wait_e):
                 raise
             pass
 
         # Check if bot detection is still shown
-        if '/sp/captcha' in page.url:
-            writerr(colored('[ Startpage ] Failed to complete CAPTCHA','red'))
+        if "/sp/captcha" in page.url:
+            writerr(colored("[ Startpage ] Failed to complete CAPTCHA", "red"))
             return set(endpoints)
-        
+
         await page.fill('input[title="Search"]', dork)
-        await page.click('button.search-btn')
-        
+        await page.click("button.search-btn")
+
         # Wait for the search results to be fully loaded
-        await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-        
+        await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
+
         # Check if any '.result-link' exists
         try:
-            await page.wait_for_selector('.result-link', timeout=1000)  # Short timeout to check existence
-        except:
+            await page.wait_for_selector(
+                ".result-link", timeout=1000
+            )  # Short timeout to check existence
+        except Exception:
             if verbose():
-                writerr(colored('[ Startpage ] Complete! - 0 endpoints found', 'green'))
+                writerr(colored("[ Startpage ] Complete! - 0 endpoints found", "green"))
             # Close page/tab unless in debug mode
             if page and not args.debug:
                 await page.close()
-            return set() 
-        
+            return set()
+
         # Collect endpoints from the initial page
         if vverbose():
-            writerr(colored('[ Startpage ] Getting endpoints from page 1', 'green', attrs=['dark'])) 
+            writerr(
+                colored(
+                    "[ Startpage ] Getting endpoints from page 1",
+                    "green",
+                    attrs=["dark"],
+                )
+            )
         content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
+        soup = BeautifulSoup(content, "html.parser")
         pageNo = 1
         endpoints = extractStartpageEndpoints(soup)
 
@@ -795,58 +1099,80 @@ async def getStartpage(context, dork, semaphore):
             if stopProgram:
                 break
             # Check if bot detection is shown
-            if '/sp/captcha' in page.url:
+            if "/sp/captcha" in page.url:
                 if args.show_browser:
-                    writerr(colored(f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "startpage" and press ENTER...','yellow')) 
+                    writerr(
+                        colored(
+                            f'[ Startpage ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "startpage" and press ENTER...',
+                            "yellow",
+                        )
+                    )
                     await wait_for_word_or_sleep("startpage", args.antibot_timeout)
-                    writerr(colored(f'[ Startpage ] Resuming...', 'green'))
+                    writerr(colored("[ Startpage ] Resuming...", "green"))
                 else:
-                    writerr(colored('[ Startpage ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                    writerr(
+                        colored(
+                            "[ Startpage ] CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                            "red",
+                        )
+                    )
                     return set(endpoints)
-            
+
             try:
                 # Wait for the search results to be fully loaded and have links
-                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-            except:
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
+            except Exception:
                 pass
 
             # Check if bot detection is still shown
-            if '/sp/captcha' in page.url:
-                writerr(colored('[ Startpage ] Failed to complete CAPTCHA','red'))
+            if "/sp/captcha" in page.url:
+                writerr(colored("[ Startpage ] Failed to complete CAPTCHA", "red"))
                 return set(endpoints)
-        
+
             # Locate all forms with action="/sp/search" on the page
             forms = await page.query_selector_all('form[action="/sp/search"]')
             last_form = forms[-1]  # Get the last form
-            
+
             # Get the current value of the "page" input field
             try:
-                curr_page_value = await last_form.evaluate('(form) => form.querySelector("input[name=\'page\']").value')
-            except:
+                curr_page_value = await last_form.evaluate(
+                    "(form) => form.querySelector(\"input[name='page']\").value"
+                )
+            except Exception:
                 curr_page_value = 1
-            
+
             # If the current "page" value has not increased, break out of the loop
             if pageNo == curr_page_value:
                 break
-            
+
             # Click the submit button for the last form
             await last_form.click()
 
             # Wait for the search results to be fully loaded and have links
-            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+            await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
 
             # Check if any '.result-link' exists
             try:
-                await page.wait_for_selector('.result-link', timeout=1000)  # Short timeout to check existence
-            except:
+                await page.wait_for_selector(
+                    ".result-link", timeout=1000
+                )  # Short timeout to check existence
+            except Exception:
                 break  # Break the loop if no '.result-link' found
-        
+
             if vverbose():
-                writerr(colored('[ Startpage ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
-            
+                writerr(
+                    colored(
+                        "[ Startpage ] Getting endpoints from page " + str(pageNo),
+                        "green",
+                        attrs=["dark"],
+                    )
+                )
+
             # Collect endpoints from the current page
             content = await page.content()
-            soup = BeautifulSoup(content, 'html.parser')
+            soup = BeautifulSoup(content, "html.parser")
             endpoints += extractStartpageEndpoints(soup)
 
             # Update the previous "page" value
@@ -860,21 +1186,38 @@ async def getStartpage(context, dork, semaphore):
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('Startpage',page)
-            writerr(colored(f'[ Startpage ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+                await savePageContents("Startpage", page)
+            writerr(
+                colored(
+                    f"[ Startpage ] Complete! {str(noOfEndpoints)} endpoints found",
+                    "green",
+                )
+            )
         return setEndpoints
-    
+
     except Exception as e:
-        noOfEndpoints  = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ Startpage ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Startpage ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ Startpage ] Page timed out - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ Startpage ] Search aborted - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
         else:
-            writerr(colored('[ Startpage ] ERROR getStartpage1: ' + str(e), 'red')) 
+            writerr(colored("[ Startpage ] ERROR getStartpage1: " + str(e), "red"))
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
-            await savePageContents('Startpage',page)
+            await savePageContents("Startpage", page)
         return set(endpoints)
     finally:
         try:
@@ -885,21 +1228,31 @@ async def getStartpage(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
-        
+
+
 def extractYahooEndpoints(soup):
     global allSubs
     try:
         endpoints = []
-        div_content = soup.find('div', id='results')
+        div_content = soup.find("div", id="results")
         if div_content:
-            a_tags = div_content.find_all('a')
+            a_tags = div_content.find_all("a")
             for a in a_tags:
                 # Don't add links from Ads
-                if not a.find_parent(class_="searchCenterTopAds") and not a.find_parent(class_="searchCenterBottomAds"):
-                    href = a.get('href')
-                    if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*yahoo\.[^\/\.]{2,}', href) and not re.match(r'^https?:\/\/([\w-]+\.)*bingj\.com', href):
+                if not a.find_parent(class_="searchCenterTopAds") and not a.find_parent(
+                    class_="searchCenterBottomAds"
+                ):
+                    href = a.get("href")
+                    if (
+                        href
+                        and href.startswith("http")
+                        and not re.match(
+                            r"^https?:\/\/([\w-]+\.)*yahoo\.[^\/\.]{2,}", href
+                        )
+                        and not re.match(r"^https?:\/\/([\w-]+\.)*bingj\.com", href)
+                    ):
                         endpoint = href.strip()
                         endpoints.append(endpoint)
                         # Send to forward proxy in background thread
@@ -909,17 +1262,19 @@ def extractYahooEndpoints(soup):
                             allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
-        writerr(colored('ERROR extractYahooEndpoints 1: ' + str(e), 'red')) 
-        
+        writerr(colored("ERROR extractYahooEndpoints 1: " + str(e), "red"))
+
+
 def extractYahooResultNumber(url):
     try:
-        match = re.search(r'\b(?:b=)([^&]+)', url)
+        match = re.search(r"\b(?:b=)([^&]+)", url)
         if match:
             return match.group(1)
         return 0
     except Exception as e:
-        writerr(colored('ERROR extractYahooResultNumber 1: ' + str(e), 'red')) 
-        
+        writerr(colored("ERROR extractYahooResultNumber 1: " + str(e), "red"))
+
+
 async def getYahoo(context, dork, semaphore):
     source_context = None
     should_close_context = False
@@ -927,35 +1282,37 @@ async def getYahoo(context, dork, semaphore):
         endpoints = []
         page = None
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
-        
+
         if verbose():
-            writerr(colored('[ Yahoo ] Starting...', 'green'))
-        
-        await page.goto(f'https://www.yahoo.com/search?q={dork}', timeout=args.timeout*1000)
+            writerr(colored("[ Yahoo ] Starting...", "green"))
+
+        await page.goto(
+            f"https://www.yahoo.com/search?q={dork}", timeout=args.timeout * 1000
+        )
 
         # Check if the cookie banner exists and click "Go to end" and then "Agree" if it does
-        cookie = await page.query_selector('#scroll-down-btn')
+        cookie = await page.query_selector("#scroll-down-btn")
         if cookie:
             await cookie.click()
         cookieAgree = await page.query_selector('button[name="agree"][value="agree"]')
         if cookieAgree:
             await cookieAgree.click()
-        
+
         # Submit the search form
-        await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+        await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
         await page.wait_for_selector("form")
         await page.press("form", "Enter")
-        await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-        
+        await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
+
         # Collect endpoints from the initial page
         content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
+        soup = BeautifulSoup(content, "html.parser")
         endpoints = extractYahooEndpoints(soup)
 
         # Main loop to keep navigating to next pages until there's no "Next page" link
@@ -965,7 +1322,7 @@ async def getYahoo(context, dork, semaphore):
             if stopProgram:
                 break
             # Find the link with the title "Next page"
-            next_page_link = await page.query_selector('a.next')
+            next_page_link = await page.query_selector("a.next")
             if next_page_link:
                 # Extract Result number value from the URL of the current page
                 pageUrl = page.url
@@ -974,22 +1331,30 @@ async def getYahoo(context, dork, semaphore):
                 if nextResultNumber == oldResultNumber:
                     break
                 oldResultNumber = nextResultNumber
-                
+
                 await next_page_link.click()
-                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
                 pageNo += 1
                 if vverbose():
-                    writerr(colored('[ Yahoo ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
-                
+                    writerr(
+                        colored(
+                            "[ Yahoo ] Getting endpoints from page " + str(pageNo),
+                            "green",
+                            attrs=["dark"],
+                        )
+                    )
+
                 # Collect endpoints from the current page
                 content = await page.content()
-                soup = BeautifulSoup(content, 'html.parser')
+                soup = BeautifulSoup(content, "html.parser")
                 endpoints += extractYahooEndpoints(soup)
-                
+
             else:
                 # No "Next page" link found, exit the loop
                 break
-        
+
         # Close page/tab unless in debug mode
         if page and not args.debug:
             await page.close()
@@ -998,21 +1363,37 @@ async def getYahoo(context, dork, semaphore):
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('Yahoo',page)
-            writerr(colored(f'[ Yahoo ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+                await savePageContents("Yahoo", page)
+            writerr(
+                colored(
+                    f"[ Yahoo ] Complete! {str(noOfEndpoints)} endpoints found", "green"
+                )
+            )
         return setEndpoints
-    
+
     except Exception as e:
-        noOfEndpoints  = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ Yahoo ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Yahoo ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ Yahoo ] Page timed out - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ Yahoo ] Search aborted - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
         else:
-            writerr(colored('[ Yahoo ] ERROR getYahoo1: ' + str(e), 'red')) 
+            writerr(colored("[ Yahoo ] ERROR getYahoo1: " + str(e), "red"))
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
-            await savePageContents('Yahoo',page)
+            await savePageContents("Yahoo", page)
         return set(endpoints)
     finally:
         try:
@@ -1023,9 +1404,10 @@ async def getYahoo(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
-        
+
+
 async def getResultsGoogle(page, endpoints):
     global allSubs
     try:
@@ -1036,19 +1418,23 @@ async def getResultsGoogle(page, endpoints):
                 page_content = await page.content()
                 break
             except Exception as e:
-                if 'page is navigating' in str(e).lower():
+                if "page is navigating" in str(e).lower():
                     await page.wait_for_timeout(1000)  # Wait 1 second and retry
                 else:
                     raise
-        
+
         if not page_content:
             return endpoints
-            
-        soup = BeautifulSoup(page_content, 'html.parser')
-        a_tags = soup.find_all('a')
+
+        soup = BeautifulSoup(page_content, "html.parser")
+        a_tags = soup.find_all("a")
         for a in a_tags:
-            href = a.get('href')
-            if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*google\.[^\/\.]{2,}', href):
+            href = a.get("href")
+            if (
+                href
+                and href.startswith("http")
+                and not re.match(r"^https?:\/\/([\w-]+\.)*google\.[^\/\.]{2,}", href)
+            ):
                 endpoint = href.strip()
                 endpoints.append(endpoint)
                 # Send to forward proxy in background thread
@@ -1058,9 +1444,10 @@ async def getResultsGoogle(page, endpoints):
                     allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
-        writerr(colored('ERROR getResultsGoogle 1: ' + str(e), 'red'))
-        return endpoints  # Return what we have so far instead of None 
-        
+        writerr(colored("ERROR getResultsGoogle 1: " + str(e), "red"))
+        return endpoints  # Return what we have so far instead of None
+
+
 async def getGoogle(context, dork, semaphore):
     source_context = None
     should_close_context = False
@@ -1068,88 +1455,111 @@ async def getGoogle(context, dork, semaphore):
         endpoints = []
         page = None
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
-        
+
         if verbose():
-            writerr(colored('[ Google ] Starting...', 'green'))
-        
+            writerr(colored("[ Google ] Starting...", "green"))
+
         # Use the parameters:
         #  tbs=li:1 - Verbatim search
         #  hl=en - English language
         #  filter=0 - Show near duplicate content
-        await page.goto(f'https://www.google.com/search?tbs=li:1&hl=en&filter=0&q={dork}', timeout=args.timeout*1000)
-        await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-        
+        await page.goto(
+            f"https://www.google.com/search?tbs=li:1&hl=en&filter=0&q={dork}",
+            timeout=args.timeout * 1000,
+        )
+        await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
+
         pageNo = 1
-        
+
         # If captcha is shown then allow time to submit it
         try:
-            captcha = await page.query_selector('form#captcha-form')
+            captcha = await page.query_selector("form#captcha-form")
             # Also check for text-based captcha warning
             if not captcha:
-                page_text = await page.text_content('body')
-                if page_text and 'detected unusual traffic from your computer' in page_text.lower():
+                page_text = await page.text_content("body")
+                if (
+                    page_text
+                    and "detected unusual traffic from your computer"
+                    in page_text.lower()
+                ):
                     captcha = True  # Set to True to trigger captcha handling
         except Exception as e:
-            if 'Execution context was destroyed' in str(e):
+            if "Execution context was destroyed" in str(e):
                 # Page is navigating, wait a moment and skip captcha check
                 await page.wait_for_timeout(1000)
                 captcha = None
             else:
                 raise
-        
+
         if captcha:
             if args.show_browser:
-                writerr(colored(f'[ Google ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "google" and press ENTER...','yellow')) 
+                writerr(
+                    colored(
+                        f'[ Google ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "google" and press ENTER...',
+                        "yellow",
+                    )
+                )
                 await wait_for_word_or_sleep("google", args.antibot_timeout)
-                writerr(colored(f'[ Google ] Resuming...', 'green'))
+                writerr(colored("[ Google ] Resuming...", "green"))
             else:
-                writerr(colored('[ Google ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                writerr(
+                    colored(
+                        "[ Google ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                        "red",
+                    )
+                )
                 return set(endpoints)
-        
+
         try:
             # Wait for the search results to be fully loaded and have links
-            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+            await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
         except Exception as wait_e:
-            if 'Target page, context or browser has been closed' in str(wait_e):
+            if "Target page, context or browser has been closed" in str(wait_e):
                 raise
             pass
 
         # Check if bot detection is still shown
         try:
-            captcha = await page.query_selector('form#captcha-form')
+            captcha = await page.query_selector("form#captcha-form")
             # Also check for text-based captcha warning
             if not captcha:
-                page_text = await page.text_content('body')
-                if page_text and 'detected unusual traffic from your computer' in page_text.lower():
+                page_text = await page.text_content("body")
+                if (
+                    page_text
+                    and "detected unusual traffic from your computer"
+                    in page_text.lower()
+                ):
                     captcha = True  # Set to True to trigger captcha handling
         except Exception as e:
-            if 'Execution context was destroyed' in str(e):
+            if "Execution context was destroyed" in str(e):
                 # Page is navigating, wait a moment and skip captcha check
                 await page.wait_for_timeout(1000)
                 captcha = None
             else:
                 raise
-        
+
         if captcha:
-            writerr(colored('[ Google ] Failed to complete reCAPTCHA','red'))
+            writerr(colored("[ Google ] Failed to complete reCAPTCHA", "red"))
             return set(endpoints)
-        
+
         # If the cookies notice is shown, accept it
         cookieAccept = await page.query_selector('button:has-text("Accept all")')
         if cookieAccept:
             await cookieAccept.click()
-        
+
         # If the dialog box asking if you want location specific search, say Not now
-        locationSpecific = await page.query_selector('g-raised-button:has-text("Not now")')
+        locationSpecific = await page.query_selector(
+            'g-raised-button:has-text("Not now")'
+        )
         if locationSpecific:
             await locationSpecific.click()
-    
+
         # Collect endpoints from the initial page
         endpoints = await getResultsGoogle(page, endpoints)
 
@@ -1159,59 +1569,85 @@ async def getGoogle(context, dork, semaphore):
                 break
             # Check if bot detection is still shown
             try:
-                captcha = await page.query_selector('form#captcha-form')
+                captcha = await page.query_selector("form#captcha-form")
                 # Also check for text-based captcha warning
                 if not captcha:
-                    page_text = await page.text_content('body')
-                    if page_text and 'detected unusual traffic from your computer' in page_text.lower():
+                    page_text = await page.text_content("body")
+                    if (
+                        page_text
+                        and "detected unusual traffic from your computer"
+                        in page_text.lower()
+                    ):
                         captcha = True  # Set to True to trigger captcha handling
             except Exception as e:
-                if 'Execution context was destroyed' in str(e):
+                if "Execution context was destroyed" in str(e):
                     # Page is navigating, wait a moment and skip captcha check
                     await page.wait_for_timeout(1000)
                     captcha = None
                 else:
                     raise
-                
+
             if captcha:
                 if args.show_browser:
-                    writerr(colored(f'[ Google ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "google" and press ENTER...','yellow')) 
+                    writerr(
+                        colored(
+                            f'[ Google ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "google" and press ENTER...',
+                            "yellow",
+                        )
+                    )
                     await wait_for_word_or_sleep("google", args.antibot_timeout)
-                    writerr(colored(f'[ Google ] Resuming...', 'green'))
+                    writerr(colored("[ Google ] Resuming...", "green"))
                 else:
-                    writerr(colored('[ Google ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                    writerr(
+                        colored(
+                            "[ Google ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                            "red",
+                        )
+                    )
                     return set(endpoints)
-                        
+
             # Get href from the Next button
-            next_button = await page.query_selector('#pnnext')
+            next_button = await page.query_selector("#pnnext")
             if next_button:
-                next_href = await next_button.get_attribute('href')
+                next_href = await next_button.get_attribute("href")
                 if next_href:
-                    next_url = 'https://www.google.com' + next_href
+                    next_url = "https://www.google.com" + next_href
                     try:
                         await page.goto(next_url, timeout=args.timeout * 1000)
-                        await page.wait_for_load_state('domcontentloaded', timeout=args.timeout * 1000)
+                        await page.wait_for_load_state(
+                            "domcontentloaded", timeout=args.timeout * 1000
+                        )
                     except Exception as e:
-                        if 'Target page, context or browser has been closed' in str(e):
+                        if "Target page, context or browser has been closed" in str(e):
                             raise
                         # Page timed out, but wait a bit to ensure navigation completed
                         try:
-                            await page.wait_for_load_state('load', timeout=5000)
-                        except:
+                            await page.wait_for_load_state("load", timeout=5000)
+                        except Exception:
                             await page.wait_for_timeout(2000)
-                    
+
                     try:
                         # Wait for the search results to be fully loaded and have links
-                        await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+                        await page.wait_for_load_state(
+                            "networkidle", timeout=args.timeout * 1000
+                        )
                     except Exception as wait_e:
-                        if 'Target page, context or browser has been closed' in str(wait_e):
+                        if "Target page, context or browser has been closed" in str(
+                            wait_e
+                        ):
                             raise
                         pass
-        
+
                     pageNo += 1
                     if vverbose():
-                        writerr(colored('[ Google ] Getting endpoints from page ' + str(pageNo), 'green', attrs=['dark']))
-                    
+                        writerr(
+                            colored(
+                                "[ Google ] Getting endpoints from page " + str(pageNo),
+                                "green",
+                                attrs=["dark"],
+                            )
+                        )
+
                     # Collect endpoints from the current page
                     endpoints = await getResultsGoogle(page, endpoints)
             else:
@@ -1226,21 +1662,38 @@ async def getGoogle(context, dork, semaphore):
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('Google',page)
-            writerr(colored(f'[ Google ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+                await savePageContents("Google", page)
+            writerr(
+                colored(
+                    f"[ Google ] Complete! {str(noOfEndpoints)} endpoints found",
+                    "green",
+                )
+            )
         return setEndpoints
-    
+
     except Exception as e:
-        noOfEndpoints  = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ Google ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Google ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ Google ] Page timed out - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ Google ] Search aborted - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
         else:
-            writerr(colored('[ Google ] ERROR getGoogle1: ' + str(e), 'red')) 
+            writerr(colored("[ Google ] ERROR getGoogle1: " + str(e), "red"))
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
-            await savePageContents('Google',page)
+            await savePageContents("Google", page)
         return set(endpoints)
     finally:
         try:
@@ -1251,18 +1704,23 @@ async def getGoogle(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
+
 
 def extractYandexEndpoints(soup):
     global allSubs
     try:
         endpoints = []
-        result_links = soup.find_all('a', class_=re.compile('.*organic__url.*'))
+        result_links = soup.find_all("a", class_=re.compile(".*organic__url.*"))
         for link in result_links:
-            href = link.get('href')
+            href = link.get("href")
             print(href)
-            if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*yandex\.[^\/\.]{2,}', href):
+            if (
+                href
+                and href.startswith("http")
+                and not re.match(r"^https?:\/\/([\w-]+\.)*yandex\.[^\/\.]{2,}", href)
+            ):
                 endpoint = href.strip()
                 endpoints.append(endpoint)
                 # Send to forward proxy in background thread
@@ -1272,8 +1730,9 @@ def extractYandexEndpoints(soup):
                     allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
-        writerr(colored('ERROR extractYandexEndpoints 1: ' + str(e), 'red')) 
-        
+        writerr(colored("ERROR extractYandexEndpoints 1: " + str(e), "red"))
+
+
 async def getYandex(context, dork, semaphore):
     source_context = None
     should_close_context = False
@@ -1281,42 +1740,58 @@ async def getYandex(context, dork, semaphore):
         endpoints = []
         page = None
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
 
         if verbose():
-            writerr(colored('[ Yandex ] Starting...', 'green'))
+            writerr(colored("[ Yandex ] Starting...", "green"))
 
-        await page.goto(f'https://yandex.com/search/?text={dork}', timeout=args.timeout*1000)
+        await page.goto(
+            f"https://yandex.com/search/?text={dork}", timeout=args.timeout * 1000
+        )
 
         # Check if bot detection is shown
-        if '/showcaptcha' in page.url:
+        if "/showcaptcha" in page.url:
             if args.show_browser:
-                writerr(colored(f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...','yellow'))
+                writerr(
+                    colored(
+                        f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...',
+                        "yellow",
+                    )
+                )
                 await wait_for_word_or_sleep("yandex", args.antibot_timeout)
-                writerr(colored(f'[ Yandex ] Resuming...', 'green'))
+                writerr(colored("[ Yandex ] Resuming...", "green"))
             else:
-                writerr(colored('[ Yandex ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                writerr(
+                    colored(
+                        "[ Yandex ] CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                        "red",
+                    )
+                )
                 return set(endpoints)
         try:
-            await page.wait_for_load_state('domcontentloaded', timeout=1000)
-        except:
+            await page.wait_for_load_state("domcontentloaded", timeout=1000)
+        except Exception:
             pass
 
         # If still on Captcha page, then exit
-        if '/showcaptcha' in page.url:
-            writerr(colored('[ Yandex ] Failed to complete CAPTCHA','red'))
+        if "/showcaptcha" in page.url:
+            writerr(colored("[ Yandex ] Failed to complete CAPTCHA", "red"))
             return set(endpoints)
 
         # Collect endpoints from the initial page
         if vverbose():
-            writerr(colored('[ Yandex ] Getting endpoints from page 1', 'green', attrs=['dark']))
+            writerr(
+                colored(
+                    "[ Yandex ] Getting endpoints from page 1", "green", attrs=["dark"]
+                )
+            )
         content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
+        soup = BeautifulSoup(content, "html.parser")
         pageNo = 1
         endpoints = extractYandexEndpoints(soup)
 
@@ -1332,54 +1807,89 @@ async def getYandex(context, dork, semaphore):
                 break
 
             await next_button.click()
-            
+
             pageNo += 1
 
             try:
                 # Yandex shows a "Skeleton" loading overlay.
                 # Wait for this overlay to become hidden.
-                await page.wait_for_selector('div.Skeleton', state='hidden', timeout=args.timeout * 1000)
+                await page.wait_for_selector(
+                    "div.Skeleton", state="hidden", timeout=args.timeout * 1000
+                )
                 # Add a final wait for the network to be idle.
-                await page.wait_for_load_state('networkidle', timeout=args.timeout * 1000)
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
             except Exception as e:
-                if 'Target page, context or browser has been closed' in str(e):
+                if "Target page, context or browser has been closed" in str(e):
                     raise
-                if 'timeout' in str(e).lower():
+                if "timeout" in str(e).lower():
                     if verbose():
-                        writerr(colored(f'[ Yandex ] Timed out waiting for page {pageNo} to load (skeleton).', 'yellow'))
+                        writerr(
+                            colored(
+                                f"[ Yandex ] Timed out waiting for page {pageNo} to load (skeleton).",
+                                "yellow",
+                            )
+                        )
                 else:
                     if verbose():
-                        writerr(colored(f'[ Yandex ] Error waiting for skeleton to disappear: {e}', 'yellow'))
-                break # exit loop
+                        writerr(
+                            colored(
+                                f"[ Yandex ] Error waiting for skeleton to disappear: {e}",
+                                "yellow",
+                            )
+                        )
+                break  # exit loop
 
             # Check if bot detection is shown
-            if '/showcaptcha' in page.url:
+            if "/showcaptcha" in page.url:
                 if args.show_browser:
-                    writerr(colored(f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...','yellow'))
+                    writerr(
+                        colored(
+                            f'[ Yandex ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "yandex" and press ENTER...',
+                            "yellow",
+                        )
+                    )
                     await wait_for_word_or_sleep("yandex", args.antibot_timeout)
-                    writerr(colored(f'[ Yandex ] Resuming...', 'green'))
+                    writerr(colored("[ Yandex ] Resuming...", "green"))
                 else:
-                    writerr(colored('[ Yandex ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                    writerr(
+                        colored(
+                            "[ Yandex ] CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                            "red",
+                        )
+                    )
                     return set(endpoints)
 
             # If still on Captcha page, then exit
-            if '/showcaptcha' in page.url:
-                writerr(colored('[ Yandex ] Failed to complete CAPTCHA','red'))
+            if "/showcaptcha" in page.url:
+                writerr(colored("[ Yandex ] Failed to complete CAPTCHA", "red"))
                 break
 
             if vverbose():
-                writerr(colored('[ Yandex ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark']))
+                writerr(
+                    colored(
+                        "[ Yandex ] Getting endpoints from page " + str(pageNo),
+                        "green",
+                        attrs=["dark"],
+                    )
+                )
 
             content = await page.content()
-            soup = BeautifulSoup(content, 'html.parser')
+            soup = BeautifulSoup(content, "html.parser")
             new_endpoints = extractYandexEndpoints(soup)
-            
+
             if not new_endpoints:
                 # If no endpoints found on the new page, assume we are done.
                 if verbose():
-                    writerr(colored(f'[ Yandex ] No more results found on page {pageNo}.', 'yellow'))
+                    writerr(
+                        colored(
+                            f"[ Yandex ] No more results found on page {pageNo}.",
+                            "yellow",
+                        )
+                    )
                 break
-                
+
             endpoints += new_endpoints
 
         # Close page/tab unless in debug mode
@@ -1390,21 +1900,38 @@ async def getYandex(context, dork, semaphore):
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('Yandex',page)
-            writerr(colored(f'[ Yandex ] Complete! {str(noOfEndpoints)} endpoints found', 'green'))
+                await savePageContents("Yandex", page)
+            writerr(
+                colored(
+                    f"[ Yandex ] Complete! {str(noOfEndpoints)} endpoints found",
+                    "green",
+                )
+            )
         return setEndpoints
 
     except Exception as e:
-        noOfEndpoints  = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ Yandex ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Yandex ] Search aborted - got {str(noOfEndpoints)} results', 'red'))
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ Yandex ] Page timed out - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ Yandex ] Search aborted - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
         else:
-            writerr(colored('[ Yandex ] ERROR getYandex1: ' + str(e), 'red'))
+            writerr(colored("[ Yandex ] ERROR getYandex1: " + str(e), "red"))
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
-            await savePageContents('Yandex',page)
+            await savePageContents("Yandex", page)
         return set(endpoints)
     finally:
         try:
@@ -1415,18 +1942,23 @@ async def getYandex(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
+
 
 async def getResultsEcosia(page, endpoints):
     global allSubs
     try:
         content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
-        a_tags = soup.find_all('a', attrs={'data-test-id': 'result-link'})
+        soup = BeautifulSoup(content, "html.parser")
+        a_tags = soup.find_all("a", attrs={"data-test-id": "result-link"})
         for a in a_tags:
-            href = a.get('href')
-            if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*ecosia\.[^\/\.]{2,}', href):
+            href = a.get("href")
+            if (
+                href
+                and href.startswith("http")
+                and not re.match(r"^https?:\/\/([\w-]+\.)*ecosia\.[^\/\.]{2,}", href)
+            ):
                 endpoint = href.strip()
                 endpoints.append(endpoint)
                 # Send to forward proxy in background thread
@@ -1436,8 +1968,9 @@ async def getResultsEcosia(page, endpoints):
                     allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
-        writerr(colored('ERROR getResultsEcosia 1: ' + str(e), 'red')) 
-        
+        writerr(colored("ERROR getResultsEcosia 1: " + str(e), "red"))
+
+
 async def getEcosia(context, dork, semaphore):
     global stopProgram
     source_context = None
@@ -1446,78 +1979,108 @@ async def getEcosia(context, dork, semaphore):
         endpoints = []
         page = None
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
-        
+
         if verbose():
-            writerr(colored('[ Ecosia ] Starting...', 'green'))
-        
+            writerr(colored("[ Ecosia ] Starting...", "green"))
+
         # Call with parameters:
-        await page.goto(f'https://www.ecosia.org/search?q={dork}', timeout=args.timeout*1000)
+        await page.goto(
+            f"https://www.ecosia.org/search?q={dork}", timeout=args.timeout * 1000
+        )
         pageNo = 1
-        
+
         try:
             # Wait for the search results to be fully loaded and have links
-            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
+            await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
         except Exception as wait_e:
-            if 'Target page, context or browser has been closed' in str(wait_e):
+            if "Target page, context or browser has been closed" in str(wait_e):
                 raise
-            pass    
-        
+            pass
+
         # Check if the cookie banner exists and click reject if it does
-        if await page.query_selector('#didomi-notice-disagree-button'):
+        if await page.query_selector("#didomi-notice-disagree-button"):
             # Click the button to reject
-            await page.click('#didomi-notice-disagree-button')
-    
+            await page.click("#didomi-notice-disagree-button")
+
         # Get the results so far, just in case it ends early
-        endpoints =  await getResultsEcosia(page, endpoints)
-            
+        endpoints = await getResultsEcosia(page, endpoints)
+
         async def click_Next():
             next_button = await page.query_selector('span:has-text("Next")')
             if next_button:
                 await next_button.click()
-                await page.wait_for_load_state('networkidle', timeout=args.timeout * 1000)
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
 
         # Loop to repeatedly check for the Next button and click it until it doesn't exist
         while await page.query_selector('span:has-text("Next")'):
             if stopProgram:
                 break
-            #await click_Next()
+            # await click_Next()
             if vverbose():
                 pageNo += 1
-                writerr(colored('[ Ecosia ] Clicking "Next" button to display page '+str(pageNo), 'green', attrs=['dark'])) 
+                writerr(
+                    colored(
+                        '[ Ecosia ] Clicking "Next" button to display page '
+                        + str(pageNo),
+                        "green",
+                        attrs=["dark"],
+                    )
+                )
             await click_Next()
             # Get the results so far, just in case it ends early
-            endpoints =  await getResultsEcosia(page, endpoints)
-        
+            endpoints = await getResultsEcosia(page, endpoints)
+
         # Get all the results
         endpoints = await getResultsEcosia(page, endpoints)
         setEndpoints = set(endpoints)
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('Ecosia',page)
-            writerr(colored(f'[ Ecosia ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+                await savePageContents("Ecosia", page)
+            writerr(
+                colored(
+                    f"[ Ecosia ] Complete! {str(noOfEndpoints)} endpoints found",
+                    "green",
+                )
+            )
         return setEndpoints
-     
+
     except Exception as e:
-        noOfEndpoints  = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ Ecosia ] Page timed out - got {str(noOfEndpoints)} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Ecosia ] Search aborted - got {str(noOfEndpoints)} results', 'red')) 
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ Ecosia ] Page timed out - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ Ecosia ] Search aborted - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
         else:
-            writerr(colored('[ Ecosia ] ERROR getEcosia 1: ' + str(e), 'red'))
+            writerr(colored("[ Ecosia ] ERROR getEcosia 1: " + str(e), "red"))
             # Check if this looks like a proxy type error and show helpful hint
-            if args.request_proxy and detect_proxy_type_error(args.request_proxy, str(e)):
+            if args.request_proxy and detect_proxy_type_error(
+                args.request_proxy, str(e)
+            ):
                 show_proxy_usage_hint(args.request_proxy)
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
-            await savePageContents('Ecosia',page)
+            await savePageContents("Ecosia", page)
         return set(endpoints)
     finally:
         try:
@@ -1528,9 +2091,10 @@ async def getEcosia(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
-        
+
+
 async def getResultsBaidu(page, endpoints):
     global allSubs
     try:
@@ -1539,7 +2103,7 @@ async def getResultsBaidu(page, endpoints):
         # Wait until at least one feedback div exists
         try:
             await page.wait_for_selector("div.cosc-feedback", timeout=1000)
-        except:
+        except Exception:
             return endpoints
 
         # Query feedback divs fresh
@@ -1550,7 +2114,7 @@ async def getResultsBaidu(page, endpoints):
             while hover_attempts < 5:
                 try:
                     await div.hover()
-                    await page.wait_for_timeout(200) 
+                    await page.wait_for_timeout(200)
                     break
                 except Exception:
                     hover_attempts += 1
@@ -1569,7 +2133,7 @@ async def getResultsBaidu(page, endpoints):
 
             parsed = urlparse(href)
             query_params = parse_qs(parsed.query)
-            url_value = query_params.get('url')
+            url_value = query_params.get("url")
             if not url_value:
                 continue
 
@@ -1585,7 +2149,7 @@ async def getResultsBaidu(page, endpoints):
         return endpoints
 
     except Exception as e:
-        writerr(colored('ERROR getResultsBaidu: ' + str(e), 'red'))
+        writerr(colored("ERROR getResultsBaidu: " + str(e), "red"))
         return endpoints
 
 
@@ -1598,44 +2162,57 @@ async def getBaidu(context, dork, semaphore):
 
     try:
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
 
         if verbose():
-            writerr(colored('[ Baidu ] Starting...', 'green'))
+            writerr(colored("[ Baidu ] Starting...", "green"))
 
         # Go to search page
         try:
-            await page.goto(f'https://www.baidu.com/s?ie=utf-8&ct=0&wd={dork}', timeout=args.timeout*1000)
-        except:
-            pass  
-        
+            await page.goto(
+                f"https://www.baidu.com/s?ie=utf-8&ct=0&wd={dork}",
+                timeout=args.timeout * 1000,
+            )
+        except Exception:
+            pass
+
         # Wait for results to load
         try:
-            await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-        except:
+            await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
+        except Exception:
             pass
 
         # Check if bot detection captcha is displayed
-        if 'captcha' in page.url:
+        if "captcha" in page.url:
             if args.show_browser:
-                writerr(colored(f'[ Baidu ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "baidu" and press ENTER...','yellow')) 
+                writerr(
+                    colored(
+                        f'[ Baidu ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "baidu" and press ENTER...',
+                        "yellow",
+                    )
+                )
                 await wait_for_word_or_sleep("baidu", args.antibot_timeout)
-                writerr(colored(f'[ Baidu ] Resuming...', 'green'))
+                writerr(colored("[ Baidu ] Resuming...", "green"))
             else:
-                writerr(colored('[ Baidu ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                writerr(
+                    colored(
+                        "[ Baidu ] CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                        "red",
+                    )
+                )
                 return set(endpoints)
 
-        # Carry on if it doesn't say "抱歉，未找到相关结果" (Sorry, no relevant results were found) 
-        text = await page.text_content('body')
-        if text and '抱歉，未找到相关结果' not in text:
+        # Carry on if it doesn't say "抱歉，未找到相关结果" (Sorry, no relevant results were found)
+        text = await page.text_content("body")
+        if text and "抱歉，未找到相关结果" not in text:
             # Wait for a popup window to disappear
             time.sleep(5)
-            
+
             pageNo = 1
             while True:
                 if stopProgram:
@@ -1644,29 +2221,47 @@ async def getBaidu(context, dork, semaphore):
                 endpoints = await getResultsBaidu(page, endpoints)
 
                 # Find next page button
-                next_button = await page.query_selector('a.n:has(span:has-text("下一页"))')
+                next_button = await page.query_selector(
+                    'a.n:has(span:has-text("下一页"))'
+                )
                 if not next_button or stopProgram:
                     break
 
                 pageNo += 1
 
                 # Check if bot detection captcha is displayed
-                if 'captcha' in page.url:
+                if "captcha" in page.url:
                     if args.show_browser:
-                        writerr(colored(f'[ Baidu ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "baidu" and press ENTER...','yellow')) 
+                        writerr(
+                            colored(
+                                f'[ Baidu ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "baidu" and press ENTER...',
+                                "yellow",
+                            )
+                        )
                         await wait_for_word_or_sleep("baidu", args.antibot_timeout)
-                        writerr(colored(f'[ Baidu ] Resuming...', 'green'))
+                        writerr(colored("[ Baidu ] Resuming...", "green"))
                     else:
-                        writerr(colored('[ Baidu ] CAPTCHA needed responding to. Consider using option -sb / --show-browser','red'))
+                        writerr(
+                            colored(
+                                "[ Baidu ] CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                                "red",
+                            )
+                        )
                         return set(endpoints)
-                
+
                 # Remember old feedback div IDs
                 old_feedback_divs = await page.query_selector_all("div.cosc-feedback")
                 old_ids = [await div.get_attribute("id") for div in old_feedback_divs]
 
                 # Click next
                 if vverbose():
-                    writerr(colored(f'[ Baidu ] Clicking "Next" button to display page {pageNo}', 'green', attrs=['dark']))
+                    writerr(
+                        colored(
+                            f'[ Baidu ] Clicking "Next" button to display page {pageNo}',
+                            "green",
+                            attrs=["dark"],
+                        )
+                    )
                 await next_button.scroll_into_view_if_needed()
                 await next_button.click()
 
@@ -1674,12 +2269,16 @@ async def getBaidu(context, dork, semaphore):
                 for _ in range(20):
                     await page.wait_for_timeout(200)
                     try:
-                        new_feedback_divs = await page.query_selector_all("div.cosc-feedback")
-                        new_ids = [await div.get_attribute("id") for div in new_feedback_divs]
+                        new_feedback_divs = await page.query_selector_all(
+                            "div.cosc-feedback"
+                        )
+                        new_ids = [
+                            await div.get_attribute("id") for div in new_feedback_divs
+                        ]
                         if set(new_ids) != set(old_ids):
                             break
                     except Exception as e:
-                        if 'Execution context was destroyed' in str(e):
+                        if "Execution context was destroyed" in str(e):
                             # Context destroyed (likely popup/navigation), wait a bit and retry
                             await page.wait_for_timeout(500)
                         else:
@@ -1689,22 +2288,36 @@ async def getBaidu(context, dork, semaphore):
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('Baidu',page)
-            writerr(colored(f'[ Baidu ] Complete! {str(noOfEndpoints)} endpoints found', 'green'))
+                await savePageContents("Baidu", page)
+            writerr(
+                colored(
+                    f"[ Baidu ] Complete! {str(noOfEndpoints)} endpoints found", "green"
+                )
+            )
 
         return setEndpoints
 
     except Exception as e:
         noOfEndpoints = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ Baidu ] Page timed out - got {noOfEndpoints} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Baidu ] Search aborted - got {noOfEndpoints} results', 'red')) 
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ Baidu ] Page timed out - got {noOfEndpoints} results", "red"
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ Baidu ] Search aborted - got {noOfEndpoints} results", "red"
+                )
+            )
         else:
-            writerr(colored('[ Baidu ] ERROR getBaidu: ' + str(e), 'red'))  
+            writerr(colored("[ Baidu ] ERROR getBaidu: " + str(e), "red"))
 
         if args.debug and page is not None:
-            await savePageContents('Baidu', page)
+            await savePageContents("Baidu", page)
 
         return set(endpoints)
 
@@ -1717,18 +2330,23 @@ async def getBaidu(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
-        
+
+
 async def getResultsSeznam(page, endpoints):
     global allSubs
     try:
         content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
-        a_tags = soup.find_all('a', attrs={'tabindex': '0'})
+        soup = BeautifulSoup(content, "html.parser")
+        a_tags = soup.find_all("a", attrs={"tabindex": "0"})
         for a in a_tags:
-            href = a.get('href')
-            if href and href.startswith('http') and not re.match(r'^https?:\/\/([\w-]+\.)*seznam\.[^\/\.]{2,}', href):
+            href = a.get("href")
+            if (
+                href
+                and href.startswith("http")
+                and not re.match(r"^https?:\/\/([\w-]+\.)*seznam\.[^\/\.]{2,}", href)
+            ):
                 endpoint = href.strip()
                 endpoints.append(endpoint)
                 # Send to forward proxy in background thread
@@ -1738,7 +2356,8 @@ async def getResultsSeznam(page, endpoints):
                     allSubs.add(getSubdomain(endpoint))
         return endpoints
     except Exception as e:
-        writerr(colored('ERROR getResultsSeznam 1: ' + str(e), 'red'))
+        writerr(colored("ERROR getResultsSeznam 1: " + str(e), "red"))
+
 
 async def getSeznam(context, dork, semaphore):
     global stopProgram
@@ -1749,45 +2368,55 @@ async def getSeznam(context, dork, semaphore):
 
     try:
         await semaphore.acquire()
-        
+
         # Get context for this source (new context in windows mode, shared in tabs mode)
         source_context, should_close_context = await get_or_create_context(context)
-        
+
         page = await source_context.new_page()
         await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
 
         if verbose():
-            writerr(colored('[ Seznam ] Starting...', 'green'))
+            writerr(colored("[ Seznam ] Starting...", "green"))
 
         # Go to search page
-        await page.goto(f'https://search.seznam.cz/?q={dork}', timeout=args.timeout*1000)
+        await page.goto(
+            f"https://search.seznam.cz/?q={dork}", timeout=args.timeout * 1000
+        )
 
         pageNo = 1
-        
+
         try:
             # Wait for search results to appear instead of networkidle
             # This is much faster than waiting for all network activity to stop
-            await page.wait_for_selector('a[tabindex="0"]', timeout=args.timeout*1000)
+            await page.wait_for_selector('a[tabindex="0"]', timeout=args.timeout * 1000)
             # Add a small delay to ensure results are fully rendered
             await asyncio.sleep(0.5)
         except Exception as wait_e:
-            if 'Target page, context or browser has been closed' in str(wait_e):
+            if "Target page, context or browser has been closed" in str(wait_e):
                 raise
             # If selector not found, try networkidle as fallback
             try:
-                await page.wait_for_load_state('networkidle', timeout=args.timeout*1000)
-            except:
-                pass    
-    
-        # Carry on if it doesn't say "Bohužel jsem nic nenašel" (Unfortunately I didn't find anything) 
-        text = await page.text_content('body')
-        if text and 'Bohužel jsem nic nenašel' not in text:
-        
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
+            except Exception:
+                pass
+
+        # Carry on if it doesn't say "Bohužel jsem nic nenašel" (Unfortunately I didn't find anything)
+        text = await page.text_content("body")
+        if text and "Bohužel jsem nic nenašel" not in text:
+
             if vverbose():
-                writerr(colored('[ Seznam ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark']))
-                        
+                writerr(
+                    colored(
+                        "[ Seznam ] Getting endpoints from page " + str(pageNo),
+                        "green",
+                        attrs=["dark"],
+                    )
+                )
+
             # Get the results so far, just in case it ends early
-            endpoints =  await getResultsSeznam(page, endpoints)
+            endpoints = await getResultsSeznam(page, endpoints)
 
             # Main loop to keep navigating to next pages until there's no "Next page" link
             while True:
@@ -1798,40 +2427,63 @@ async def getSeznam(context, dork, semaphore):
                     await page.click('a[title="Další strana"]')
                     try:
                         # Wait for new results to appear instead of networkidle
-                        await page.wait_for_selector('a[tabindex="0"]', timeout=args.timeout*1000)
+                        await page.wait_for_selector(
+                            'a[tabindex="0"]', timeout=args.timeout * 1000
+                        )
                         await asyncio.sleep(0.5)
-                    except:
-                        pass 
-                    
+                    except Exception:
+                        pass
+
                     pageNo += 1
                     if vverbose():
-                        writerr(colored('[ Seznam ] Getting endpoints from page '+str(pageNo), 'green', attrs=['dark'])) 
-            
+                        writerr(
+                            colored(
+                                "[ Seznam ] Getting endpoints from page " + str(pageNo),
+                                "green",
+                                attrs=["dark"],
+                            )
+                        )
+
                     # Get all the results
                     endpoints = await getResultsSeznam(page, endpoints)
                 else:
                     # No "Next page" link found, exit the loop
                     break
-        
+
         setEndpoints = set(endpoints)
         if verbose():
             noOfEndpoints = len(setEndpoints)
             if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents('Seznam',page)
-            writerr(colored(f'[ Seznam ] Complete! {str(noOfEndpoints)} endpoints found', 'green')) 
+                await savePageContents("Seznam", page)
+            writerr(
+                colored(
+                    f"[ Seznam ] Complete! {str(noOfEndpoints)} endpoints found",
+                    "green",
+                )
+            )
         return setEndpoints
-    
+
     except Exception as e:
         noOfEndpoints = len(set(endpoints))
-        if 'net::ERR_TIMED_OUT' in str(e) or 'Timeout' in str(e):
-            writerr(colored(f'[ Seznam ] Page timed out - got {noOfEndpoints} results', 'red'))
-        elif 'net::ERR_ABORTED' in str(e) or 'Target page, context or browser has been closed' in str(e):
-            writerr(colored(f'[ Seznam ] Search aborted - got {noOfEndpoints} results', 'red')) 
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ Seznam ] Page timed out - got {noOfEndpoints} results", "red"
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ Seznam ] Search aborted - got {noOfEndpoints} results", "red"
+                )
+            )
         else:
-            writerr(colored('[ Seznam ] ERROR getSeznam: ' + str(e), 'red'))  
+            writerr(colored("[ Seznam ] ERROR getSeznam: " + str(e), "red"))
 
         if args.debug and page is not None:
-            await savePageContents('Seznam', page)
+            await savePageContents("Seznam", page)
 
         return set(endpoints)
 
@@ -1844,8 +2496,214 @@ async def getSeznam(context, dork, semaphore):
             if should_close_context and source_context and not args.debug:
                 await source_context.close()
             semaphore.release()
-        except:
+        except Exception:
             pass
+
+
+async def getResultsKagi(page, endpoints):
+    global allSubs
+    try:
+        content = await page.content()
+        soup = BeautifulSoup(content, "html.parser")
+        # Links are the href of <a> tags with specific classes
+        a_tags = soup.find_all(
+            "a", class_=lambda x: x and ("__sri_title_link" in x or "_0_URL" in x)
+        )
+        for a in a_tags:
+            href = a.get("href")
+            if (
+                href
+                and href.startswith("http")
+                and not re.match(r"^https?:\/\/([\w-]+\.)*kagi\.[^\/\.]{2,}", href)
+            ):
+                endpoint = href.strip()
+                if endpoint not in endpoints:
+                    endpoints.append(endpoint)
+                    # Send to forward proxy in background thread
+                    send_to_proxy(endpoint)
+                    # If the same search is going to be resubmitted without subs, get the subdomain
+                    if args.resubmit_without_subs:
+                        allSubs.add(getSubdomain(endpoint))
+        return endpoints
+    except Exception as e:
+        writerr(colored("ERROR getResultsKagi 1: " + str(e), "red"))
+
+
+async def getKagi(context, dork, semaphore):
+    global stopProgram, KAGI_SESSION_LINK
+    source_context = None
+    should_close_context = False
+    page = None
+    endpoints = []
+
+    try:
+        await semaphore.acquire()
+
+        # Get context for this source (new context in windows mode, shared in tabs mode)
+        source_context, should_close_context = await get_or_create_context(context)
+
+        page = await source_context.new_page()
+        await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
+
+        if verbose():
+            writerr(colored("[ Kagi ] Starting...", "green"))
+
+        base_url = KAGI_SESSION_LINK
+
+        # Kagi search passes
+        search_urls = [
+            base_url,  # Default region
+            base_url + "&r=no_region",  # No region
+            base_url + "&verbatim=1",  # Verbatim
+            base_url + "&r=no_region&verbatim=1",  # No region + Verbatim
+            base_url + "&personalized=0",  # No personalized
+            base_url + "&r=no_region&personalized=0",  # No region + No personalized
+        ]
+
+        for base_url in search_urls:
+            if stopProgram:
+                break
+
+            if vverbose():
+                params = []
+                if "no_region" in base_url:
+                    params.append("no_region")
+                if "verbatim=1" in base_url:
+                    params.append("verbatim")
+                if "personalized=0" in base_url:
+                    params.append("no_personalized")
+
+                param_msg = " + ".join(params) if params else "default settings"
+                writerr(
+                    colored(
+                        f"[ Kagi ] Performing search with {param_msg}...",
+                        "green",
+                        attrs=["dark"],
+                    )
+                )
+
+            # Go to Kagi URL
+            await page.goto(base_url, timeout=args.timeout * 1000)
+
+            # Enter the dork into the field
+            await page.fill("#searchBar", dork)
+            # Press the search button
+            await page.click("#searchFormSubmit")
+
+            # Wait for results to load
+            try:
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
+            except Exception:
+                pass
+
+            pageNo = 1
+            max_pages = 50  # Safety limit to prevent infinite/long loops
+
+            # Loop for "More Results" button until it no longer exists or is not visible
+            while pageNo < max_pages:
+                if stopProgram:
+                    break
+
+                more_results_button = await page.query_selector("#load_more_results")
+                if more_results_button and await more_results_button.is_visible():
+                    if vverbose():
+                        writerr(
+                            colored(
+                                '[ Kagi ] Clicking "More Results" button to display page '
+                                + str(pageNo + 1),
+                                "green",
+                                attrs=["dark"],
+                            )
+                        )
+
+                    try:
+                        await more_results_button.click()
+                        # Use domcontentloaded + sleep as it's more robust than networkidle for some sites
+                        await page.wait_for_load_state(
+                            "domcontentloaded", timeout=args.timeout * 1000
+                        )
+                        await asyncio.sleep(1)  # Small pause for results to render
+                        if vverbose():
+                            writerr(
+                                colored(
+                                    f"[ Kagi ] Page {pageNo + 1} loaded",
+                                    "green",
+                                    attrs=["dark"],
+                                )
+                            )
+                    except Exception as click_e:
+                        if vverbose():
+                            writerr(
+                                colored(
+                                    f"[ Kagi ] Error clicking more results: {str(click_e)}",
+                                    "yellow",
+                                )
+                            )
+                        break
+
+                    pageNo += 1
+                else:
+                    break
+
+            if pageNo >= max_pages and vverbose():
+                writerr(colored("[ Kagi ] Maximum pagination limit reached", "yellow"))
+
+            if vverbose():
+                writerr(
+                    colored(
+                        "[ Kagi ] Getting endpoints from page", "green", attrs=["dark"]
+                    )
+                )
+
+            # Get results after all "More Results" clicks for this pass
+            endpoints = await getResultsKagi(page, endpoints)
+
+        setEndpoints = set(endpoints)
+        if verbose():
+            noOfEndpoints = len(setEndpoints)
+            if noOfEndpoints == 0 and args.debug and page is not None:
+                await savePageContents("Kagi", page)
+            writerr(
+                colored(
+                    f"[ Kagi ] Complete! {str(noOfEndpoints)} endpoints found", "green"
+                )
+            )
+        return setEndpoints
+
+    except Exception as e:
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(f"[ Kagi ] Page timed out - got {noOfEndpoints} results", "red")
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(f"[ Kagi ] Search aborted - got {noOfEndpoints} results", "red")
+            )
+        else:
+            writerr(colored("[ Kagi ] ERROR getKagi: " + str(e), "red"))
+
+        if args.debug and page is not None:
+            await savePageContents("Kagi", page)
+
+        return set(endpoints)
+
+    finally:
+        try:
+            # Close page/tab unless in debug mode
+            if page and not args.debug:
+                await page.close()
+            # Close context (window) in windows mode unless in debug mode
+            if should_close_context and source_context and not args.debug:
+                await source_context.close()
+            semaphore.release()
+        except Exception:
+            pass
+
 
 async def savePageContents(source, page):
     try:
@@ -1854,28 +2712,29 @@ async def savePageContents(source, page):
 
         # Wait for a short duration to ensure the page loading is stopped
         await asyncio.sleep(2)
-        
+
         # Get the page contents and save to file
         content = await page.content()
-        if content != '' and content != '<html><head></head><body></body></html>':
+        if content != "" and content != "<html><head></head><body></body></html>":
             now = datetime.datetime.now()
             timestamp = now.strftime("%Y%m%d-%H%M%S")
             filename = f"xnldorker_{source}_{timestamp}.html"
             with open(filename, "w", encoding="utf-8") as file:
                 file.write(content)
-            writerr(colored(f'[ {source} ] Saved HTML content to {filename}', 'cyan')) 
+            writerr(colored(f"[ {source} ] Saved HTML content to {filename}", "cyan"))
     except Exception as e:
-        writerr(colored(f'[ {source} ] Unable to save page contents: {str(e)}', 'cyan')) 
+        writerr(colored(f"[ {source} ] Unable to save page contents: {str(e)}", "cyan"))
+
 
 async def processInput(dork):
-    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, stopProgram, proxy_sent_endpoints
+    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, stopProgram, proxy_sent_endpoints
     try:
         # Clear proxy sent endpoints for this search
         proxy_sent_endpoints.clear()
-        
+
         # Start proxy forwarding thread if needed
         start_proxy_thread()
-        
+
         # Create a single browser instance
         async with async_playwright() as p:
             # Configure request proxy if provided
@@ -1885,46 +2744,52 @@ async def processInput(dork):
                 proxy_config = {"server": args.request_proxy}
                 context_options["ignore_https_errors"] = True
                 if verbose():
-                    writerr(colored(f'[ Request Proxy] Using browser request proxy: {args.request_proxy}', 'cyan'))
-            
+                    writerr(
+                        colored(
+                            f"[ Request Proxy] Using browser request proxy: {args.request_proxy}",
+                            "cyan",
+                        )
+                    )
+
             if args.show_browser:
                 browser = await p.chromium.launch(headless=False, proxy=proxy_config)
             else:
                 # Launch with additional args to avoid bot detection
                 browser = await p.chromium.launch(
-                    headless=True, 
+                    headless=True,
                     proxy=proxy_config,
                     args=[
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-dev-shm-usage',
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-web-security',
-                        '--disable-features=IsolateOrigins,site-per-process'
-                    ]
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-dev-shm-usage",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-web-security",
+                        "--disable-features=IsolateOrigins,site-per-process",
+                    ],
                 )
-            
+
             # For "windows" mode, each source will create its own context
             # For "tabs" mode or headless, use a single shared context
-            if args.show_browser == 'windows':
+            if args.show_browser == "windows":
                 # Don't create context yet - each source will create its own
                 context = None
             else:
                 # Create a shared context with viewport and ignore HTTPS errors if using proxy
-                context_options['viewport'] = {'width': 1280, 'height': 720}
-                context_options['user_agent'] = DEFAULT_USER_AGENT
+                context_options["viewport"] = {"width": 1280, "height": 720}
+                context_options["user_agent"] = DEFAULT_USER_AGENT
                 # Add extra headers to avoid bot detection
-                context_options['extra_http_headers'] = {
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'DNT': '1',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1'
+                context_options["extra_http_headers"] = {
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "DNT": "1",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
                 }
                 context = await browser.new_context(**context_options)
                 # Inject script to hide webdriver property and other automation indicators
-                await context.add_init_script("""
+                await context.add_init_script(
+                    """
                     // Hide webdriver
                     Object.defineProperty(navigator, 'webdriver', {
                         get: () => undefined
@@ -1952,126 +2817,151 @@ async def processInput(dork):
                             Promise.resolve({ state: Notification.permission }) :
                             originalQuery(parameters)
                     );
-                """)
+                """
+                )
 
             # Define a dictionary to hold the results for each source
             resultsDict = {}
-            
+
             # Define a semaphore to limit concurrent tasks. This is determined by the -cs / --concurrent-sources argument
             concurrentSources = args.concurrent_sources
             if concurrentSources == 0 or concurrentSources > len(sourcesToProcess):
                 concurrentSources = len(sourcesToProcess)
             semaphore = asyncio.Semaphore(concurrentSources)
-            
+
             # Define a list to hold the sources included in the gather call
             includedSources = []
-            
-            # Check and add coroutines for any required sources
-            try:
-                if 'duckduckgo' in sourcesToProcess:
-                    includedSources.append(getDuckDuckGo(context, dork, semaphore))
-                if 'bing' in sourcesToProcess:
-                    includedSources.append(getBing(context, dork, semaphore))
-                if 'startpage' in sourcesToProcess:
-                    includedSources.append(getStartpage(context, dork, semaphore))
-                if 'yahoo' in sourcesToProcess:
-                    includedSources.append(getYahoo(context, dork, semaphore))
-                if 'google' in sourcesToProcess:
-                    includedSources.append(getGoogle(context, dork, semaphore))
-                if 'yandex' in sourcesToProcess:
-                    includedSources.append(getYandex(context, dork, semaphore))
-                if 'ecosia' in sourcesToProcess:
-                    includedSources.append(getEcosia(context, dork, semaphore))
-                if 'baidu' in sourcesToProcess:
-                    includedSources.append(getBaidu(context, dork, semaphore))
-                if 'seznam' in sourcesToProcess:
-                    includedSources.append(getSeznam(context, dork, semaphore))
-            except:
-                pass
-            
+
+            # Map source names to their coroutine functions
+            source_map = {
+                "duckduckgo": getDuckDuckGo,
+                "bing": getBing,
+                "startpage": getStartpage,
+                "yahoo": getYahoo,
+                "google": getGoogle,
+                "yandex": getYandex,
+                "ecosia": getEcosia,
+                "baidu": getBaidu,
+                "seznam": getSeznam,
+                "kagi": getKagi,
+            }
+
+            # Add coroutines for requested sources in the order they appear in sourcesToProcess
+            for source in sourcesToProcess:
+                if source in source_map:
+                    includedSources.append(source_map[source](context, dork, semaphore))
+
             # Run all searches concurrently using the same browser instance
             results = await asyncio.gather(*includedSources)
-            
+
             # Populate the results dictionary and endpoint lists
             for source, result in zip(sourcesToProcess, results):
                 if stopProgram:
-                    break 
-                if source not in resultsDict:  # Check if the source is not already in the resultsDict
+                    break
+                if (
+                    source not in resultsDict
+                ):  # Check if the source is not already in the resultsDict
                     resultsDict[source] = result  # If not, add it
                 else:
                     # If the source is already in the resultsDict, append new data to existing data
                     resultsDict[source].update(result)
 
                 # Update the endpoint lists as well
-                if source == 'duckduckgo':
+                if source == "duckduckgo":
                     duckduckgoEndpoints.update(result)
-                elif source == 'bing':
+                elif source == "bing":
                     bingEndpoints.update(result)
-                elif source == 'startpage':
+                elif source == "startpage":
                     startpageEndpoints.update(result)
-                elif source == 'yahoo':
+                elif source == "yahoo":
                     yahooEndpoints.update(result)
-                elif source == 'google':
+                elif source == "google":
                     googleEndpoints.update(result)
-                elif source == 'yandex':
+                elif source == "yandex":
                     yandexEndpoints.update(result)
-                elif source == 'ecosia':
+                elif source == "ecosia":
                     ecosiaEndpoints.update(result)
-                elif source == 'baidu':
+                elif source == "baidu":
                     baiduEndpoints.update(result)
-                elif source == 'seznam':
+                elif source == "seznam":
                     seznamEndpoints.update(result)
-        
+                elif source == "kagi":
+                    kagiEndpoints.update(result)
+
             # If debug mode and showing browser, wait for user to press ENTER before closing
             if args.debug and args.show_browser:
                 try:
-                    writerr(colored('DEBUG: PRESS ENTER TO FINISH', 'yellow'))
+                    writerr(colored("DEBUG: PRESS ENTER TO FINISH", "yellow"))
                     input()
-                except:                                                                                                 pass
-                
+                except Exception:
+                    pass
+
             # Close the browser instance once all searches are done
             try:
                 await browser.close()
-            except:
+            except Exception:
                 pass
-        
+
     except Exception as e:
-        writerr(colored('ERROR processInput 1: ' + str(e), 'red')) 
+        writerr(colored("ERROR processInput 1: " + str(e), "red"))
     finally:
         try:
-            if 'context' in locals():
+            if "context" in locals():
                 await context.close()
             await browser.close()
-        except:
+        except Exception:
             pass
         # Stop proxy forwarding thread
         stop_proxy_thread()
-    
+
+
 async def processOutput():
-    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, sourcesToProcess
+    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, sourcesToProcess
     try:
         allEndpoints = set()
 
         # If --output-sources was passed, then keep the source in the endpoint, otherwise we need a unique set without source
         if args.output_sources:
             if duckduckgoEndpoints:
-                allEndpoints.update(f'[ DuckDuckGo ] {endpoint}' for endpoint in duckduckgoEndpoints)
+                allEndpoints.update(
+                    f"[ DuckDuckGo ] {endpoint}" for endpoint in duckduckgoEndpoints
+                )
             if bingEndpoints:
-                allEndpoints.update(f'[ Bing ] {endpoint}' for endpoint in bingEndpoints)
+                allEndpoints.update(
+                    f"[ Bing ] {endpoint}" for endpoint in bingEndpoints
+                )
             if startpageEndpoints:
-                allEndpoints.update(f'[ StartPage ] {endpoint}' for endpoint in startpageEndpoints)
+                allEndpoints.update(
+                    f"[ StartPage ] {endpoint}" for endpoint in startpageEndpoints
+                )
             if yahooEndpoints:
-                allEndpoints.update(f'[ Yahoo ] {endpoint}' for endpoint in yahooEndpoints)
+                allEndpoints.update(
+                    f"[ Yahoo ] {endpoint}" for endpoint in yahooEndpoints
+                )
             if googleEndpoints:
-                allEndpoints.update(f'[ Google ] {endpoint}' for endpoint in googleEndpoints)
+                allEndpoints.update(
+                    f"[ Google ] {endpoint}" for endpoint in googleEndpoints
+                )
             if yandexEndpoints:
-                allEndpoints.update(f'[ Yandex ] {endpoint}' for endpoint in yandexEndpoints)
+                allEndpoints.update(
+                    f"[ Yandex ] {endpoint}" for endpoint in yandexEndpoints
+                )
             if ecosiaEndpoints:
-                allEndpoints.update(f'[ Ecosia ] {endpoint}' for endpoint in ecosiaEndpoints)
+                allEndpoints.update(
+                    f"[ Ecosia ] {endpoint}" for endpoint in ecosiaEndpoints
+                )
             if baiduEndpoints:
-                allEndpoints.update(f'[ Baidud ] {endpoint}' for endpoint in baiduEndpoints)
+                allEndpoints.update(
+                    f"[ Baidu ] {endpoint}" for endpoint in baiduEndpoints
+                )
             if seznamEndpoints:
-                allEndpoints.update(f'[ Seznam ] {endpoint}' for endpoint in seznamEndpoints)
+                allEndpoints.update(
+                    f"[ Seznam ] {endpoint}" for endpoint in seznamEndpoints
+                )
+            if kagiEndpoints:
+                allEndpoints.update(
+                    f"[ Kagi ] {endpoint}" for endpoint in kagiEndpoints
+                )
         else:
             if duckduckgoEndpoints:
                 allEndpoints |= duckduckgoEndpoints
@@ -2091,10 +2981,18 @@ async def processOutput():
                 allEndpoints |= baiduEndpoints
             if seznamEndpoints:
                 allEndpoints |= seznamEndpoints
+            if kagiEndpoints:
+                allEndpoints |= kagiEndpoints
 
         if verbose() and sys.stdin.isatty():
-            writerr(colored('\nTotal endpoints found: '+str(len(allEndpoints))+' 🤘  ', 'cyan')+str(sourcesToProcess))
-            
+            writerr(
+                colored(
+                    "\nTotal endpoints found: " + str(len(allEndpoints)) + " 🤘  ",
+                    "cyan",
+                )
+                + str(sourcesToProcess)
+            )
+
         # If the -ow / --output_overwrite argument was passed and the file exists already, get the contents of the file to include
         appendedResults = False
         if args.output and not args.output_overwrite:
@@ -2103,7 +3001,7 @@ async def processOutput():
                 appendedResults = True
                 for endpoint in existingEndpoints.readlines():
                     allEndpoints.add(endpoint.strip())
-            except:
+            except Exception:
                 pass
 
         # If an output file was specified, open it
@@ -2112,7 +3010,7 @@ async def processOutput():
                 # If the filename has any "/" in it, remove the contents after the last one to just get the path and create the directories if necessary
                 try:
                     f = os.path.basename(args.output)
-                    p = args.output[:-(len(f))-1]
+                    p = args.output[: -(len(f)) - 1]
                     if p != "" and not os.path.exists(p):
                         os.makedirs(p)
                 except Exception as e:
@@ -2121,75 +3019,171 @@ async def processOutput():
                 outFile = open(os.path.expanduser(args.output), "w")
             except Exception as e:
                 if vverbose():
-                    writerr(colored("ERROR processOutput 2: " + str(e), "red"))    
-        
+                    writerr(colored("ERROR processOutput 2: " + str(e), "red"))
+
         # Output all endpoints
         for endpoint in allEndpoints:
             try:
                 # If an output file was specified, write to the file
                 if args.output is not None:
-                    outFile.write(endpoint + '\n')
-                else:    
+                    outFile.write(endpoint + "\n")
+                else:
                     # If output is piped or the --output argument was not specified, output to STDOUT
                     if not sys.stdin.isatty() or args.output is None:
-                        write(endpoint,True)
+                        write(endpoint, True)
             except Exception as e:
-                writerr(colored('ERROR processOutput 6: Could not output links found - ' + str(e), 'red'))
-            
+                writerr(
+                    colored(
+                        "ERROR processOutput 6: Could not output links found - "
+                        + str(e),
+                        "red",
+                    )
+                )
+
         # Close the output file if it was opened
         try:
             if args.output is not None:
                 if appendedResults:
-                    write(colored('Output successfully appended to file: ', 'cyan')+colored(args.output,'white'))
+                    write(
+                        colored("Output successfully appended to file: ", "cyan")
+                        + colored(args.output, "white")
+                    )
                 else:
-                    write(colored('Output successfully written to file: ', 'cyan')+colored(args.output,'white'))
+                    write(
+                        colored("Output successfully written to file: ", "cyan")
+                        + colored(args.output, "white")
+                    )
                 write()
                 outFile.close()
         except Exception as e:
-            writerr(colored('ERROR processOutput 3: ' + str(e), 'red'))
-                            
+            writerr(colored("ERROR processOutput 3: " + str(e), "red"))
+
     except Exception as e:
-        writerr(colored('ERROR processOutput 1: ' + str(e), 'red'))
+        writerr(colored("ERROR processOutput 1: " + str(e), "red"))
+
 
 def showOptionsAndConfig():
-    global sourcesToProcess, inputDork
+    global sourcesToProcess, inputDork, KAGI_SESSION_LINK
     try:
-        write(colored('Selected options:', 'cyan'))
+        write(colored("Selected options:", "cyan"))
         if os.path.isfile(os.path.expanduser(args.input)):
-            write(colored('-i: ' + args.input, 'magenta')+colored(' The file of dorks used to search on the sources.','white'))
+            write(
+                colored("-i: " + args.input, "magenta")
+                + colored(" The file of dorks used to search on the sources.", "white")
+            )
         else:
-            write(colored('-i: ' + inputDork, 'magenta')+colored(' The dork used to search on the sources.','white'))
+            write(
+                colored("-i: " + inputDork, "magenta")
+                + colored(" The dork used to search on the sources.", "white")
+            )
         if args.output is not None:
-            write(colored('-o: ' + args.output, 'magenta')+colored(' Where gathered endpoints will be written.','white'))
+            write(
+                colored("-o: " + args.output, "magenta")
+                + colored(" Where gathered endpoints will be written.", "white")
+            )
         else:
-            write(colored('-o: <STDOUT>', 'magenta')+colored(' An output file wasn\'t given, so output will be written to STDOUT.','white'))
-        write(colored("-ow: " + str(args.output_overwrite), "magenta")+colored(" Whether the output will be overwritten if it already exists.", "white" ))
+            write(
+                colored("-o: <STDOUT>", "magenta")
+                + colored(
+                    " An output file wasn't given, so output will be written to STDOUT.",
+                    "white",
+                )
+            )
+        write(
+            colored("-ow: " + str(args.output_overwrite), "magenta")
+            + colored(
+                " Whether the output will be overwritten if it already exists.", "white"
+            )
+        )
         if args.sources:
-            write(colored('-s: ' + args.sources, 'magenta')+colored(' The sources requested to search.','white'))
+            write(
+                colored("-s: " + args.sources, "magenta")
+                + colored(" The sources requested to search.", "white")
+            )
         if args.exclude_sources:
-            write(colored('-es: ' + args.exclude_sources, 'magenta')+colored(' The sources excluded from the search.','white'))
+            write(
+                colored("-es: " + args.exclude_sources, "magenta")
+                + colored(" The sources excluded from the search.", "white")
+            )
         if args.concurrent_sources == 0:
-            write(colored('-cs: ALL', 'magenta')+colored(' The browser timeout in seconds','white'))
+            write(
+                colored("-cs: ALL", "magenta")
+                + colored(" The browser timeout in seconds", "white")
+            )
         else:
-            write(colored('-cs: ' + str(args.concurrent_sources), 'magenta')+colored(' The number of concurrent sources that will be searched at a time.','white'))
-        write(colored('-t: ' + str(args.timeout), 'magenta')+colored(' The browser timeout in seconds','white'))
-        write(colored('-sb: ' + str(args.show_browser), 'magenta')+colored(' Whether the browser will be shown. If False, then headless mode is used.','white'))
-        write(colored('-rwos: ' + str(args.resubmit_without_subs), 'magenta')+colored(' Whether the query will be resubmitted, but excluding the sub domains found in the first search.','white'))
+            write(
+                colored("-cs: " + str(args.concurrent_sources), "magenta")
+                + colored(
+                    " The number of concurrent sources that will be searched at a time.",
+                    "white",
+                )
+            )
+        write(
+            colored("-t: " + str(args.timeout), "magenta")
+            + colored(" The browser timeout in seconds", "white")
+        )
+        write(
+            colored("-sb: " + str(args.show_browser), "magenta")
+            + colored(
+                " Whether the browser will be shown. If False, then headless mode is used.",
+                "white",
+            )
+        )
+        write(
+            colored("-rwos: " + str(args.resubmit_without_subs), "magenta")
+            + colored(
+                " Whether the query will be resubmitted, but excluding the sub domains found in the first search.",
+                "white",
+            )
+        )
         if args.forward_proxy:
-            write(colored('-fp: ' + str(args.forward_proxy), 'magenta')+colored(' The proxy to send found links to.','white'))
+            write(
+                colored("-fp: " + str(args.forward_proxy), "magenta")
+                + colored(" The proxy to send found links to.", "white")
+            )
         if args.request_proxy:
-            write(colored('-rp: ' + str(args.request_proxy), 'magenta')+colored(' The browser request proxy being used for searches.','white'))
-        write(colored('-abt: ' + str(args.antibot_timeout), 'magenta')+colored(' The number of seconds you have to manually respond to the anti-bot mechanism before it tries to continue.','white'))
-        write(colored('Sources being checked: ', 'magenta')+str(sourcesToProcess))
-        write('')
-        
+            write(
+                colored("-rp: " + str(args.request_proxy), "magenta")
+                + colored(
+                    " The browser request proxy being used for searches.", "white"
+                )
+            )
+        write(
+            colored("-abt: " + str(args.antibot_timeout), "magenta")
+            + colored(
+                " The number of seconds you have to manually respond to the anti-bot mechanism before it tries to continue.",
+                "white",
+            )
+        )
+        if "kagi" in sourcesToProcess:
+            if KAGI_SESSION_LINK == "":
+                writerr(
+                    colored("Kagi Session Link: ", "magenta")
+                    + colored(
+                        "No Kagi Session Link found in config.yml - skipping Kagi",
+                        "red",
+                    )
+                )
+                sourcesToProcess.remove("kagi")
+            else:
+                write(
+                    colored("Kagi Session Link: ", "magenta")
+                    + colored(str(KAGI_SESSION_LINK), "white")
+                )
+        write(
+            colored("Sources being checked: ", "magenta")
+            + colored(str(sourcesToProcess), "white")
+        )
+        write("")
+
     except Exception as e:
-        writerr(colored('ERROR showOptionsAndConfig 1: ' + str(e), 'red'))    
+        writerr(colored("ERROR showOptionsAndConfig 1: " + str(e), "red"))
+
 
 # For validating arguments -s and -es
 def argcheckSources(value):
     # Split the value by commas to get individual sources
-    sources = value.split(',')
+    sources = value.split(",")
 
     # Check if all sources are valid and exist in SOURCES
     if not all(source.strip() in SOURCES for source in sources):
@@ -2197,29 +3191,27 @@ def argcheckSources(value):
             f"Invalid sources requested. Can only be a combination of {','.join(SOURCES)}"
         )
     return value
-    
+
+
 async def run_main():
-    
+
     global args, sourcesToProcess, allSubs, inputDork
-    
+
     # Tell Python to run the handler() function when SIGINT is received
     signal(SIGINT, handler)
-    
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='xnldorker - by @Xnl-h4ck3r: Gather results of dorks across a number of search engines.'    
+        description="xnldorker - by @Xnl-h4ck3r: Gather results of dorks across a number of search engines."
     )
     parser.add_argument(
-        '-i',
-        '--input',
-        action='store',
-        help='A dork to use on the search sources.'
+        "-i", "--input", action="store", help="A dork to use on the search sources."
     )
     parser.add_argument(
-        '-o',
-        '--output',
-        action='store',
-        help='The output file that will contain the results (default: output.txt). If piped to another program, output will be written to STDOUT instead.',
+        "-o",
+        "--output",
+        action="store",
+        help="The output file that will contain the results (default: output.txt). If piped to another program, output will be written to STDOUT instead.",
     )
     parser.add_argument(
         "-ow",
@@ -2228,26 +3220,26 @@ async def run_main():
         help="If the output file already exists, it will be overwritten instead of being appended to.",
     )
     parser.add_argument(
-        '-os',
-        '--output-sources',
-        action='store_true',
+        "-os",
+        "--output-sources",
+        action="store_true",
         help='Show the source of each endpoint in the output. Each endpoint will be prefixed, e.g. "[ Bing ] https://example.com".',
     )
     parser.add_argument(
-        '-s',
-        '--sources',
-        action='store',
-        help='Specific sources to use when searching (-s duckduckgo,bing). Use -ls to display all available sources.',
+        "-s",
+        "--sources",
+        action="store",
+        help="Specific sources to use when searching (-s duckduckgo,bing). Use -ls to display all available sources.",
         type=argcheckSources,
-        metavar='string[]'
+        metavar="string[]",
     )
     parser.add_argument(
-        '-es',
-        '--exclude-sources',
-        action='store',
-        help='Specific sources to exclude searching (-s google,startpage). Use -ls to display all available sources.',
+        "-es",
+        "--exclude-sources",
+        action="store",
+        help="Specific sources to exclude searching (-s google,startpage). Use -ls to display all available sources.",
         type=argcheckSources,
-        metavar='string[]'
+        metavar="string[]",
     )
     parser.add_argument(
         "-cs",
@@ -2258,43 +3250,47 @@ async def run_main():
         default=2,
     )
     parser.add_argument(
-        '-ls',
-        '--list-sources',
-        action='store_true',
-        help='List all available sources.',
+        "-ls",
+        "--list-sources",
+        action="store_true",
+        help="List all available sources.",
     )
     default_timeout = 30
     parser.add_argument(
         "-t",
         "--timeout",
-        help="How many seconds to wait for the source to respond (default: " + str(default_timeout) + " seconds).",
+        help="How many seconds to wait for the source to respond (default: "
+        + str(default_timeout)
+        + " seconds).",
         default=default_timeout,
         type=int,
         metavar="<seconds>",
     )
     parser.add_argument(
-        '-sb',
-        '--show-browser',
-        nargs='?',
-        const='tabs',
+        "-sb",
+        "--show-browser",
+        nargs="?",
+        const="tabs",
         default=False,
-        choices=['tabs', 'windows'],
+        choices=["tabs", "windows"],
         help='View the browser instead of using headless browser. Options: "tabs" (default, opens sources in tabs) or "windows" (opens each source in a separate window).',
     )
     default_abt = 90
     parser.add_argument(
         "-abt",
         "--antibot-timeout",
-        help="How many seconds to wait when the -sb option was used and a known anti-bot mechanism is encountered (default "+str(default_abt)+"). This is the time you have to manually respond to the anti-bot mechanism before it tries to continue.",
+        help="How many seconds to wait when the -sb option was used and a known anti-bot mechanism is encountered (default "
+        + str(default_abt)
+        + "). This is the time you have to manually respond to the anti-bot mechanism before it tries to continue.",
         default=default_abt,
         type=int,
         metavar="<seconds>",
     )
     parser.add_argument(
-        '-rwos',
-        '--resubmit-without-subs',
-        action='store_true',
-        help='After the initial search, search again but exclude all subs found previously to get more links.',
+        "-rwos",
+        "--resubmit-without-subs",
+        action="store_true",
+        help="After the initial search, search again but exclude all subs found previously to get more links.",
     )
     parser.add_argument(
         "-fp",
@@ -2310,45 +3306,65 @@ async def run_main():
         help="Browser request proxy to use. Can be a proxy string (e.g. http://user:pass@1.2.3.4:8000, socks5://host:port) or a file containing proxy list (one per line, random selection)",
         default="",
     )
-    parser.add_argument('--debug', action='store_true', help='Save page contents on error and leave all browser tabs/windows open until pressing Enter to end the program.')
-    parser.add_argument('-nb', '--no-banner', action='store_true', help='Hides the tool banner.')
-    parser.add_argument('--version', action='store_true', help='Show version number')
-    parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output.')
-    parser.add_argument('-vv', '--vverbose', action='store_true', help='Increased verbose output.')
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Save page contents on error and leave all browser tabs/windows open until pressing Enter to end the program.",
+    )
+    parser.add_argument(
+        "-nb", "--no-banner", action="store_true", help="Hides the tool banner."
+    )
+    parser.add_argument("--version", action="store_true", help="Show version number")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output.")
+    parser.add_argument(
+        "-vv", "--vverbose", action="store_true", help="Increased verbose output."
+    )
     args = parser.parse_args()
 
     # If --version was passed, display version and exit
     if args.version:
-        write(colored('xnldorker - v' + __version__,'cyan'))
+        write(colored("xnldorker - v" + __version__, "cyan"))
         sys.exit()
-    
+
     # If --list-sources was passed, display sources and exit
     if args.list_sources:
         if not args.no_banner:
             showBanner()
-        write(colored('These are the available sources: ','green')+str(SOURCES))
+        write(colored("These are the available sources: ", "green") + str(SOURCES))
         sys.exit()
-        
+
+    # Get the config settings from the config.yml file
+    getConfig()
+
     try:
         # If no input was given, raise an error
         if sys.stdin.isatty():
             if args.input is None:
-                writerr(colored('You need to provide input with -i argument or through <stdin>. This will be a dork used to search the requested sources, e.g. "site:example.com"', 'red'))
+                writerr(
+                    colored(
+                        'You need to provide input with -i argument or through <stdin>. This will be a dork used to search the requested sources, e.g. "site:example.com"',
+                        "red",
+                    )
+                )
                 sys.exit()
-        
+
         # Determine the sources to process
         if args.sources is None:
             sourcesToProcess = SOURCES
         else:
-            sourcesToProcess = args.sources.split(',')
+            sourcesToProcess = args.sources.split(",")
         if args.exclude_sources is not None:
-            sourcesToProcess = [source for source in sourcesToProcess if source not in args.exclude_sources]
+            sourcesToProcess = [
+                source
+                for source in sourcesToProcess
+                if source not in args.exclude_sources
+            ]
 
         # Get the input dork, depending on the input type
         dorks = []
         if sys.stdin.isatty():
             if os.path.isfile(os.path.expanduser(args.input)):
-                with open(os.path.expanduser(args.input), 'r') as f:
+                with open(os.path.expanduser(args.input), "r") as f:
                     dorks = [line.strip() for line in f]
             else:
                 dorks.append(args.input)
@@ -2360,9 +3376,12 @@ async def run_main():
             inputDork = dork
             allSubs.clear()
             # If the input value doesn't seem to start with an advanced search operator and has no spaces, assume it is a domain only and prefix with "site:"
-            if not re.match(r'(^|\s)[a-z]*:', inputDork, re.IGNORECASE) and ' ' not in inputDork:
-                inputDork = 'site:'+inputDork
-            
+            if (
+                not re.match(r"(^|\s)[a-z]*:", inputDork, re.IGNORECASE)
+                and " " not in inputDork
+            ):
+                inputDork = "site:" + inputDork
+
             # Only for first dork...
             # If input is not piped, show the banner, and if --verbose option was chosen show options and config values
             if firstDork and sys.stdin.isatty():
@@ -2377,51 +3396,95 @@ async def run_main():
                     selected_proxy = selectRequestProxy(args.request_proxy)
                     if selected_proxy:
                         args.request_proxy = selected_proxy
-                        
+
                         # Check if this looks like an intercepting proxy and warn user
-                        common_intercept_ports = ['8080', '8081', '8082', '9090', '3128']
+                        common_intercept_ports = [
+                            "8080",
+                            "8081",
+                            "8082",
+                            "9090",
+                            "3128",
+                        ]
                         proxy_port = None
-                        if ':' in args.request_proxy:
+                        if ":" in args.request_proxy:
                             try:
-                                proxy_port = args.request_proxy.split(':')[-1]
-                            except:
+                                proxy_port = args.request_proxy.split(":")[-1]
+                            except Exception:
                                 pass
-                        
+
                         if proxy_port in common_intercept_ports:
-                            writerr(colored('⚠️  WARNING: You\'re using --request-proxy with what appears to be an intercepting proxy port.', 'yellow'))
-                            writerr(colored('   This routes ALL browser traffic through the proxy.', 'white'))
-                            writerr(colored('   If you want to send discovered endpoints to the proxy instead, use:', 'white'))
-                            writerr(colored(f'   --forward-proxy {args.request_proxy}', 'cyan'))
-                            writerr('')
+                            writerr(
+                                colored(
+                                    "⚠️  WARNING: You're using --request-proxy with what appears to be an intercepting proxy port.",
+                                    "yellow",
+                                )
+                            )
+                            writerr(
+                                colored(
+                                    "   This routes ALL browser traffic through the proxy.",
+                                    "white",
+                                )
+                            )
+                            writerr(
+                                colored(
+                                    "   If you want to send discovered endpoints to the proxy instead, use:",
+                                    "white",
+                                )
+                            )
+                            writerr(
+                                colored(
+                                    f"   --forward-proxy {args.request_proxy}", "cyan"
+                                )
+                            )
+                            writerr("")
                     else:
-                        writerr(colored('ERROR: Failed to select request proxy, continuing without proxy', 'red'))
-                        args.request_proxy = ""    
-                
+                        writerr(
+                            colored(
+                                "ERROR: Failed to select request proxy, continuing without proxy",
+                                "red",
+                            )
+                        )
+                        args.request_proxy = ""
+
             # Process the input given on -i (--input), or <stdin>
-            write(colored('Processing dork: ', 'cyan') + colored(inputDork, 'white'))
+            write(colored("Processing dork: ", "cyan") + colored(inputDork, "white"))
             await processInput(inputDork)
 
         # If there were some subs found, and the --resubmit-without-subs was passed, then run again with subdomains removed
         if len(allSubs) > 0 and args.resubmit_without_subs:
-            inputDork = inputDork + ' ' + ' '.join(['-{}'.format(sub) for sub in allSubs if sub])
-            write(colored('\nResubmitting again for input: ', 'magenta')+colored(inputDork,'white'))
+            inputDork = (
+                inputDork
+                + " "
+                + " ".join(["-{}".format(sub) for sub in allSubs if sub])
+            )
+            write(
+                colored("\nResubmitting again for input: ", "magenta")
+                + colored(inputDork, "white")
+            )
             await processInput(inputDork)
-        
+
         # Output the saved urls with parameters
         await processOutput()
-        
+
     except Exception as e:
-        writerr(colored('ERROR main 1: ' + str(e), 'red'))      
+        writerr(colored("ERROR main 1: " + str(e), "red"))
 
     # Show ko-fi link if verbose and not piped
     try:
         if verbose() and sys.stdin.isatty():
-            writerr(colored('✅ Want to buy me a coffee? ☕ https://ko-fi.com/xnlh4ck3r 🤘', 'green'))
-    except:
+            writerr(
+                colored(
+                    "✅ Want to buy me a coffee? ☕ https://ko-fi.com/xnlh4ck3r 🤘",
+                    "green",
+                )
+            )
+    except Exception:
         pass
+
 
 def main():
     asyncio.run(run_main())
-    
-if __name__ == '__main__':
+
+
+if __name__ == "__main__":
     main()

@@ -1,13 +1,15 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v2.3
+## About - v3.0
 
 This is a tool used to run a dork on different search sites.
-The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex, Ecosia, Baidu, Seznam**
+The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex, Ecosia, Baidu, Seznam, Kagi**
 
 **ℹ️ IMPORTANT: This tool does not solve captchas for you, so it is advised you use the `-sb`/`--show-browser` argument and manually deal with the captchas to get best results. DO NOT interact with the browser unless the CLI says to solve a Captcha, and ONLY solve the capture and don't click anything else!**
 
 **ℹ️ IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` (and/or `--exclude-source`) argument to specify the appropriate sources.**
+
+**ℹ️ IMPORTANT: Kagi is a a premium, ad‑free search engine and search platform that you pay to use, focused on privacy and quality results. It provides a smaller result set, but higher chance of surfacing weird, niche, or forgotten pages when dorking. Find out more [here](https://kagi.com).**
 
 **ℹ️ KNOWN ISSUES:**
 
@@ -105,6 +107,12 @@ xnldorker -i "site:redbull.com ext:php" -s google -v -o redbull_endpoints.txt
 The output can also be piped to another command.
 
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/example1.png"></center>
+
+## config.yml
+
+The `config.yml` file has the keys which can be updated to suit your needs:
+
+- `KAGI_SESSION_LINK` - Your full Kagi Session Link that can be found on https://kagi.com/settings/user_details
 
 ## Recommendations
 
