@@ -1,5 +1,12 @@
 ## Changelog
 
+- v3.1
+
+  - Changed
+
+    - BUG FIX: When Ctrl-C is pressed, ensure that any links found so far are saved.
+    - BUG FIX: Fixed error `'NoneType' object is not iterable` in `processInput` that could occur when Ctrl-C was pressed.
+
 - v3.0
 
   - New

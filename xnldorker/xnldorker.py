@@ -623,6 +623,7 @@ async def getResultsDuckDuckGo(page, endpoints):
         return endpoints
     except Exception as e:
         writerr(colored("ERROR getResultsDuckDuckGo 1: " + str(e), "red"))
+        return endpoints
 
 
 async def getDuckDuckGo(context, dork, semaphore):
@@ -847,6 +848,7 @@ def extractBingEndpoints(soup):
         return endpoints
     except Exception as e:
         writerr(colored("ERROR extractBingEndpoints 1: " + str(e), "red"))
+        return endpoints
 
 
 async def getBing(context, dork, semaphore):
@@ -1004,6 +1006,7 @@ def extractStartpageEndpoints(soup):
         return endpoints
     except Exception as e:
         writerr(colored("ERROR extractStartpageEndpoints 1: " + str(e), "red"))
+        return endpoints
 
 
 async def getStartpage(context, dork, semaphore):
@@ -1263,6 +1266,7 @@ def extractYahooEndpoints(soup):
         return endpoints
     except Exception as e:
         writerr(colored("ERROR extractYahooEndpoints 1: " + str(e), "red"))
+        return endpoints
 
 
 def extractYahooResultNumber(url):
@@ -1731,6 +1735,7 @@ def extractYandexEndpoints(soup):
         return endpoints
     except Exception as e:
         writerr(colored("ERROR extractYandexEndpoints 1: " + str(e), "red"))
+        return endpoints
 
 
 async def getYandex(context, dork, semaphore):
@@ -1969,6 +1974,7 @@ async def getResultsEcosia(page, endpoints):
         return endpoints
     except Exception as e:
         writerr(colored("ERROR getResultsEcosia 1: " + str(e), "red"))
+        return endpoints
 
 
 async def getEcosia(context, dork, semaphore):
@@ -2357,6 +2363,7 @@ async def getResultsSeznam(page, endpoints):
         return endpoints
     except Exception as e:
         writerr(colored("ERROR getResultsSeznam 1: " + str(e), "red"))
+        return endpoints
 
 
 async def getSeznam(context, dork, semaphore):
@@ -2527,6 +2534,7 @@ async def getResultsKagi(page, endpoints):
         return endpoints
     except Exception as e:
         writerr(colored("ERROR getResultsKagi 1: " + str(e), "red"))
+        return endpoints
 
 
 async def getKagi(context, dork, semaphore):
@@ -2856,8 +2864,9 @@ async def processInput(dork):
 
             # Populate the results dictionary and endpoint lists
             for source, result in zip(sourcesToProcess, results):
-                if stopProgram:
-                    break
+                if result is None:
+                    result = set()
+
                 if (
                     source not in resultsDict
                 ):  # Check if the source is not already in the resultsDict
