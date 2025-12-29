@@ -1,13 +1,15 @@
 <center><img src="https://github.com/xnl-h4ck3r/xnldorker/blob/main/xnldorker/images/title.png"></center>
 
-## About - v3.1
+## About - v3.2
 
 This is a tool used to run a dork on different search sites.
-The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, Yandex, Ecosia, Baidu, Seznam, Kagi**
+The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Google, GoogleCS, Yandex, Ecosia, Baidu, Seznam, Kagi**
 
 **ℹ️ IMPORTANT: This tool does not solve captchas for you, so it is advised you use the `-sb`/`--show-browser` argument and manually deal with the captchas to get best results. DO NOT interact with the browser unless the CLI says to solve a Captcha, and ONLY solve the capture and don't click anything else!**
 
 **ℹ️ IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` (and/or `--exclude-source`) argument to specify the appropriate sources.**
+
+**ℹ️ IMPORTANT: The GoogleCS source (Google Custom Search Engine) using an API and requires an API key and an optional Chat ID. You can get a Chat ID from [here](https://cse.google.com/cse/create/new).**
 
 **ℹ️ IMPORTANT: Kagi is a a premium, ad‑free search engine and search platform that you pay to use, focused on privacy and quality results. It provides a smaller result set, but higher chance of surfacing weird, niche, or forgotten pages when dorking. Find out more [here](https://kagi.com).**
 
@@ -113,6 +115,8 @@ The output can also be piped to another command.
 The `config.yml` file has the keys which can be updated to suit your needs:
 
 - `KAGI_SESSION_LINK` - Your full Kagi Session Link that can be found on https://kagi.com/settings/user_details
+- `GOOGLE_SEARCH_API_KEY` - Your Google Custom Search API Key
+- `GOOGLE_SEARCH_CHAT_ID` - Your Google Custom Search Chat ID
 
 ## Recommendations
 

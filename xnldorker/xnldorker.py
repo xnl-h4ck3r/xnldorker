@@ -5,6 +5,8 @@
 # Good luck and good hunting! If you really love the tool (or any others), or they helped you find an awesome bounty, consider BUYING ME A COFFEE! (https://ko-fi.com/xnlh4ck3r) ☕ (I could use the caffeine!)
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import re
 import os
 import sys
@@ -43,6 +45,7 @@ SOURCES = [
     "baidu",
     "seznam",
     "kagi",
+    "googlecs",
 ]
 
 DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -69,11 +72,10 @@ UA_DESKTOP = [
     "Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0) like Gecko",
 ]
 
-# Default values if config.yml not found
-DEFAULT_KAGI_SESSION_LINK = ""
-
 # Variables to hold config.yml values
 KAGI_SESSION_LINK = ""
+GOOGLE_SEARCH_API_KEY = ""
+GOOGLE_SEARCH_CHAT_ID = ""
 
 # Global variables
 args = None
@@ -85,6 +87,7 @@ duckduckgoEndpoints = set()
 bingEndpoints = set()
 yahooEndpoints = set()
 googleEndpoints = set()
+googlecsEndpoints = set()
 startpageEndpoints = set()
 yandexEndpoints = set()
 ecosiaEndpoints = set()
@@ -97,7 +100,8 @@ proxy_queue = None
 proxy_thread = None
 proxy_session = None
 proxy_sent_endpoints = set()
-
+googlecs_session = None
+googlecs_request_lock = asyncio.Lock()
 
 # Functions used when printing messages dependant on verbose options
 def verbose():
@@ -128,7 +132,7 @@ def getConfig():
     """
     Try to get the values from the config file, otherwise use the defaults
     """
-    global KAGI_SESSION_LINK
+    global KAGI_SESSION_LINK, GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_CHAT_ID
     try:
 
         # Try to get the config file values
@@ -165,19 +169,29 @@ def getConfig():
             try:
                 KAGI_SESSION_LINK = config.get("KAGI_SESSION_LINK")
                 if str(KAGI_SESSION_LINK) == "None":
-                    KAGI_SESSION_LINK = DEFAULT_KAGI_SESSION_LINK
+                    KAGI_SESSION_LINK = ""
             except Exception:
-                writerr(
-                    colored(
-                        "Unable to read KAGI_SESSION_LINK from config.yml - default set",
-                        "red",
-                    )
-                )
-                KAGI_SESSION_LINK = DEFAULT_KAGI_SESSION_LINK
+                KAGI_SESSION_LINK = ""
+
+            try:
+                GOOGLE_SEARCH_API_KEY = config.get("GOOGLE_SEARCH_API_KEY")
+                if str(GOOGLE_SEARCH_API_KEY) == "None":
+                    GOOGLE_SEARCH_API_KEY = ""
+            except Exception:
+                GOOGLE_SEARCH_API_KEY = ""
+
+            try:
+                GOOGLE_SEARCH_CHAT_ID = config.get("GOOGLE_SEARCH_CHAT_ID")
+                if str(GOOGLE_SEARCH_CHAT_ID) == "None":
+                    GOOGLE_SEARCH_CHAT_ID = "DEFAULT"
+            except Exception:
+                GOOGLE_SEARCH_CHAT_ID = "DEFAULT"
 
         except Exception:
-            # writerr(colored('WARNING: Cannot find file "config.yml", so using default values', 'yellow'))
-            KAGI_SESSION_LINK = DEFAULT_KAGI_SESSION_LINK
+            writerr(colored('WARNING: Cannot find file "config.yml", so using default values', 'yellow'))
+            KAGI_SESSION_LINK = ""
+            GOOGLE_SEARCH_API_KEY = ""
+            GOOGLE_SEARCH_CHAT_ID = "DEFAULT"
 
     except Exception as e:
         writerr(colored("ERROR getConfig 1: " + str(e), "red"))
@@ -1712,6 +1726,151 @@ async def getGoogle(context, dork, semaphore):
             pass
 
 
+async def getGoogleCS(context, dork, semaphore):
+    global stopProgram, GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_CHAT_ID, allSubs, googlecs_session, googlecs_request_lock
+    endpoints = []
+    try:
+        await semaphore.acquire()
+
+        if verbose():
+            writerr(colored("[ GoogleCS ] Starting...", "green"))
+
+        # If Google CSE API key or Chat ID are NOT provided, warn the user
+        if not GOOGLE_SEARCH_API_KEY:
+            writerr(
+                colored(
+                    "[ GoogleCS ] API key not provided in config.yml. Please provide GOOGLE_SEARCH_API_KEY.",
+                    "red",
+                )
+            )
+            return set(endpoints)
+        
+        # If the Chat ID is set to default context, warn the user
+        if not GOOGLE_SEARCH_CHAT_ID or GOOGLE_SEARCH_CHAT_ID == "DEFAULT":
+            writerr(
+                colored(
+                    "[ GoogleCS ] Chat ID is set to default context. Please provide a valid GOOGLE_SEARCH_CHAT_ID in config.yml if required.",
+                    "yellow",
+                )
+            )
+
+        # Initialize session with retry logic if not already done
+        if googlecs_session is None:
+            retry_strategy = Retry(
+                total=5,
+                backoff_factor=1,
+                status_forcelist=[429],
+                allowed_methods=["GET"],
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            googlecs_session = requests.Session()
+            googlecs_session.mount("https://", adapter)
+
+        start_index = 1
+        pageNo = 1
+        while pageNo <= 10:
+            if stopProgram:
+                break
+
+            if vverbose():
+                writerr(
+                    colored(
+                        f"[ GoogleCS ] Getting endpoints from API page {pageNo}",
+                        "green",
+                        attrs=["dark"],
+                    )
+                )
+
+            api_url = f"https://www.googleapis.com/customsearch/v1?q={unquote(dork)}&key={GOOGLE_SEARCH_API_KEY}&cx={GOOGLE_SEARCH_CHAT_ID}&start={start_index}"
+            try:
+                # Use a lock to ensure only one googlecs request happens at once
+                # and sleep to throttle requests to 100 per minute (60s / 100 = 0.6s)
+                async with googlecs_request_lock:
+                    if stopProgram:
+                        break
+                    # Use run_in_executor to prevent synchronous requests from blocking the event loop
+                    loop = asyncio.get_event_loop()
+                    response = await loop.run_in_executor(None, lambda: googlecs_session.get(api_url, timeout=args.timeout))
+                    if response.status_code != 200:
+                        try:
+                            error_msg = response.json().get("error", {}).get("message")
+                            if error_msg:
+                                writerr(
+                                    colored(
+                                        f"[ GoogleCS ] API ERROR: {response.status_code} - {error_msg}",
+                                        "red",
+                                    )
+                                )
+                            else:
+                                writerr(
+                                    colored(
+                                        f"[ GoogleCS ] API ERROR: {response.status_code} - {response.reason}",
+                                        "red",
+                                    )
+                                )
+                        except Exception:
+                            writerr(
+                                colored(
+                                    f"[ GoogleCS ] API ERROR: {response.status_code} - {response.reason}",
+                                    "red",
+                                )
+                            )
+                        break
+
+                    data = response.json()
+                    await asyncio.sleep(0.6)
+
+                items = data.get("items", [])
+                if not items:
+                    break
+
+                for item in items:
+                    if stopProgram:
+                        break
+                    endpoint = item.get("link")
+                    if endpoint:
+                        endpoint = endpoint.strip()
+                        endpoints.append(endpoint)
+                        send_to_proxy(endpoint)
+                        if args.resubmit_without_subs:
+                            allSubs.add(getSubdomain(endpoint))
+
+                # Check if there's a next page or if we've reached the end
+                next_page = data.get("queries", {}).get("nextPage")
+                if not next_page:
+                    break
+
+                start_index = next_page[0].get("startIndex")
+                pageNo += 1
+
+            except Exception as api_e:
+                if "too many 429 error responses" in str(api_e):
+                    writerr(colored("[ GoogleCS ] API ERROR: too many 429 error responses", "red"))
+                else:
+                    writerr(colored(f"[ GoogleCS ] API ERROR: {str(api_e)}", "red"))
+                break
+
+        setEndpoints = set(endpoints)
+        if verbose():
+            noOfEndpoints = len(setEndpoints)
+            writerr(
+                colored(
+                    f"[ GoogleCS ] Complete! {str(noOfEndpoints)} endpoints found",
+                    "green",
+                )
+            )
+        return setEndpoints
+
+    except Exception as e:
+        writerr(colored("[ GoogleCS ] ERROR getGoogleCS: " + str(e), "red"))
+        return set(endpoints)
+    finally:
+        try:
+            semaphore.release()
+        except Exception:
+            pass
+
+
 def extractYandexEndpoints(soup):
     global allSubs
     try:
@@ -1999,6 +2158,36 @@ async def getEcosia(context, dork, semaphore):
         await page.goto(
             f"https://www.ecosia.org/search?q={dork}", timeout=args.timeout * 1000
         )
+
+        # Check if bot detection is shown (e.g. Cloudflare Turnstile)
+        is_bot_detected = False
+        try:
+            page_title = await page.title()
+            page_content = await page.content()
+            if "Just a moment" in page_title or "cloudflare" in page.url.lower() or "unblock challenges.cloudflare.com" in page_content:
+                is_bot_detected = True
+        except Exception:
+            pass
+
+        if is_bot_detected:
+            if args.show_browser:
+                writerr(
+                    colored(
+                        f'[ Ecosia ] Cloudflare challenge/CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "ecosia" and press ENTER...',
+                        "yellow",
+                    )
+                )
+                await wait_for_word_or_sleep("ecosia", args.antibot_timeout)
+                writerr(colored("[ Ecosia ] Resuming...", "green"))
+            else:
+                writerr(
+                    colored(
+                        "[ Ecosia ] Cloudflare challenge/CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                        "red",
+                    )
+                )
+                return set(endpoints)
+
         pageNo = 1
 
         try:
@@ -2735,7 +2924,7 @@ async def savePageContents(source, page):
 
 
 async def processInput(dork):
-    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, stopProgram, proxy_sent_endpoints
+    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, stopProgram, proxy_sent_endpoints
     try:
         # Clear proxy sent endpoints for this search
         proxy_sent_endpoints.clear()
@@ -2759,21 +2948,22 @@ async def processInput(dork):
                         )
                     )
 
+            # Launch with additional args to avoid bot detection
+            browser_args = [
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-web-security",
+                "--disable-features=IsolateOrigins,site-per-process",
+            ]
             if args.show_browser:
-                browser = await p.chromium.launch(headless=False, proxy=proxy_config)
-            else:
-                # Launch with additional args to avoid bot detection
                 browser = await p.chromium.launch(
-                    headless=True,
-                    proxy=proxy_config,
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-dev-shm-usage",
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-web-security",
-                        "--disable-features=IsolateOrigins,site-per-process",
-                    ],
+                    headless=False, proxy=proxy_config, args=browser_args
+                )
+            else:
+                browser = await p.chromium.launch(
+                    headless=True, proxy=proxy_config, args=browser_args
                 )
 
             # For "windows" mode, each source will create its own context
@@ -2852,6 +3042,7 @@ async def processInput(dork):
                 "baidu": getBaidu,
                 "seznam": getSeznam,
                 "kagi": getKagi,
+                "googlecs": getGoogleCS,
             }
 
             # Add coroutines for requested sources in the order they appear in sourcesToProcess
@@ -2896,6 +3087,8 @@ async def processInput(dork):
                     seznamEndpoints.update(result)
                 elif source == "kagi":
                     kagiEndpoints.update(result)
+                elif source == "googlecs":
+                    googlecsEndpoints.update(result)
 
             # If debug mode and showing browser, wait for user to press ENTER before closing
             if args.debug and args.show_browser:
@@ -2925,7 +3118,7 @@ async def processInput(dork):
 
 
 async def processOutput():
-    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, sourcesToProcess
+    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, sourcesToProcess
     try:
         allEndpoints = set()
 
@@ -2971,6 +3164,10 @@ async def processOutput():
                 allEndpoints.update(
                     f"[ Kagi ] {endpoint}" for endpoint in kagiEndpoints
                 )
+            if googlecsEndpoints:
+                allEndpoints.update(
+                    f"[ GoogleCS ] {endpoint}" for endpoint in googlecsEndpoints
+                )
         else:
             if duckduckgoEndpoints:
                 allEndpoints |= duckduckgoEndpoints
@@ -2992,6 +3189,8 @@ async def processOutput():
                 allEndpoints |= seznamEndpoints
             if kagiEndpoints:
                 allEndpoints |= kagiEndpoints
+            if googlecsEndpoints:
+                allEndpoints |= googlecsEndpoints
 
         if verbose() and sys.stdin.isatty():
             writerr(
@@ -3072,7 +3271,7 @@ async def processOutput():
 
 
 def showOptionsAndConfig():
-    global sourcesToProcess, inputDork, KAGI_SESSION_LINK
+    global sourcesToProcess, inputDork, KAGI_SESSION_LINK, GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_CHAT_ID
     try:
         write(colored("Selected options:", "cyan"))
         if os.path.isfile(os.path.expanduser(args.input)):
@@ -3178,6 +3377,25 @@ def showOptionsAndConfig():
                 write(
                     colored("Kagi Session Link: ", "magenta")
                     + colored(str(KAGI_SESSION_LINK), "white")
+                )
+        if "googlecs" in sourcesToProcess:
+            if GOOGLE_SEARCH_API_KEY == "" or GOOGLE_SEARCH_CHAT_ID == "":
+                writerr(
+                    colored("KGoogle Custom Search: ", "magenta")
+                    + colored(
+                        "Google Custom Search API Key and Chat ID not found in config.yml - skipping GoogleCS",
+                        "red",
+                    )
+                )
+                sourcesToProcess.remove("googlecs")
+            else:
+                write(
+                    colored("Google Custom Search API Key: ", "magenta")
+                    + colored(str(GOOGLE_SEARCH_API_KEY), "white")
+                )
+                write(
+                    colored("Google Custom Search Chat ID: ", "magenta")
+                    + colored(str(GOOGLE_SEARCH_CHAT_ID), "white")
                 )
         write(
             colored("Sources being checked: ", "magenta")

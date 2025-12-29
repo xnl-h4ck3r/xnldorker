@@ -1,5 +1,15 @@
 ## Changelog
 
+- v3.2
+
+  - New
+
+    - Add Google Custom Search API as a source called `googlecs`. Thanks to [pdstat](https://github.com/pdstat) for the idea and code.
+    - Added `GOOGLE_SEARCH_API_KEY` and `GOOGLE_SEARCH_CHAT_ID` to the `config.yml` file.
+    - Implemented exponential backoff for `googlecs` using a `requests.Session` for 429 status codes and throttled `googlecs` requests to 100 per minute.
+    - Improved anti-bot detection by adding stealth arguments to browser launch for both headless and non-headless modes.
+    - Added Cloudflare challenge detection and manual bypass support for the Ecosia source.
+    
 - v3.1
 
   - Changed
