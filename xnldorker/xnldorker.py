@@ -103,6 +103,7 @@ proxy_sent_endpoints = set()
 googlecs_session = None
 googlecs_request_lock = asyncio.Lock()
 
+
 # Functions used when printing messages dependant on verbose options
 def verbose():
     return args.verbose or args.vverbose
@@ -188,7 +189,12 @@ def getConfig():
                 GOOGLE_SEARCH_CHAT_ID = "DEFAULT"
 
         except Exception:
-            writerr(colored('WARNING: Cannot find file "config.yml", so using default values', 'yellow'))
+            writerr(
+                colored(
+                    'WARNING: Cannot find file "config.yml", so using default values',
+                    "yellow",
+                )
+            )
             KAGI_SESSION_LINK = ""
             GOOGLE_SEARCH_API_KEY = ""
             GOOGLE_SEARCH_CHAT_ID = "DEFAULT"
@@ -1744,7 +1750,7 @@ async def getGoogleCS(context, dork, semaphore):
                 )
             )
             return set(endpoints)
-        
+
         # If the Chat ID is set to default context, warn the user
         if not GOOGLE_SEARCH_CHAT_ID or GOOGLE_SEARCH_CHAT_ID == "DEFAULT":
             writerr(
@@ -1790,7 +1796,10 @@ async def getGoogleCS(context, dork, semaphore):
                         break
                     # Use run_in_executor to prevent synchronous requests from blocking the event loop
                     loop = asyncio.get_event_loop()
-                    response = await loop.run_in_executor(None, lambda: googlecs_session.get(api_url, timeout=args.timeout))
+                    response = await loop.run_in_executor(
+                        None,
+                        lambda: googlecs_session.get(api_url, timeout=args.timeout),
+                    )
                     if response.status_code != 200:
                         try:
                             error_msg = response.json().get("error", {}).get("message")
@@ -1845,7 +1854,12 @@ async def getGoogleCS(context, dork, semaphore):
 
             except Exception as api_e:
                 if "too many 429 error responses" in str(api_e):
-                    writerr(colored("[ GoogleCS ] API ERROR: too many 429 error responses", "red"))
+                    writerr(
+                        colored(
+                            "[ GoogleCS ] API ERROR: too many 429 error responses",
+                            "red",
+                        )
+                    )
                 else:
                     writerr(colored(f"[ GoogleCS ] API ERROR: {str(api_e)}", "red"))
                 break
@@ -2164,7 +2178,11 @@ async def getEcosia(context, dork, semaphore):
         try:
             page_title = await page.title()
             page_content = await page.content()
-            if "Just a moment" in page_title or "cloudflare" in page.url.lower() or "unblock challenges.cloudflare.com" in page_content:
+            if (
+                "Just a moment" in page_title
+                or "cloudflare" in page.url.lower()
+                or "unblock challenges.cloudflare.com" in page_content
+            ):
                 is_bot_detected = True
         except Exception:
             pass
