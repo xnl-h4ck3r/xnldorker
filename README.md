@@ -9,15 +9,18 @@ The available sources are currently: **DuckDuckGo, Bing, Startpage, Yahoo, Googl
 
 **ℹ️ IMPORTANT: If you use advanced search operators, be aware that operators that work on some of the sources may not work on others. You may need to use the `--sources` (and/or `--exclude-source`) argument to specify the appropriate sources.**
 
-**ℹ️ IMPORTANT: The GoogleCS source (Google Custom Search Engine) using an API and requires an API key and an optional Chat ID. You can get a Chat ID from [here](https://cse.google.com/cse/create/new).**
+**ℹ️ IMPORTANT: The GoogleCS source (Google Custom Search Engine) using an API and requires an API key and an optional Chat ID. Follow the instructions [below](#google-custom-search-instructions).**
 
 **ℹ️ IMPORTANT: Kagi is a a premium, ad‑free search engine and search platform that you pay to use, focused on privacy and quality results. It provides a smaller result set, but higher chance of surfacing weird, niche, or forgotten pages when dorking. Find out more [here](https://kagi.com).**
 
 **ℹ️ KNOWN ISSUES:**
 
-- Bing does not like bots. If you show the browser you can solve the captcha and get one page of links but that's all for now.
-- Duckduckgo is fine if you show the browser, but if you try using headless mode it will get no links due to their bot detection.
-- Yandex shows a n insane number of captcha screens. If you show the browser, you can get a few pages of links before you get sick of solving them!
+These are issues that I see, but may vary based on Geo-Location or other factors:
+
+- 🔴 Ecosia use Cloudflare which now shows a captcha straight away, and doesn't allow you to verify.
+- 🔴 Bing does not like bots. If you show the browser you can solve the captcha and get one page of links but that's all for now.
+- 🟠 DuckDuckGo is fine if you show the browser, but if you try using headless mode it will get no links due to their bot detection.
+- 🟠 Yandex shows an insane number of captcha screens. If you show the browser, you can get a few pages of links before you get sick of solving them!
 
 **⚠️ WARNING: If you use this tool a lot, then I guess there is the potential to get blocked on these source sites, so use sensibly. Using a VPN will help.**
 
@@ -142,12 +145,80 @@ If you use the `--debug` option, then `xnldorker` will try to write a html file 
 
 ## TODO
 
-- Bing no longer works because of bot detection. Find a way around it.
+- Bing and Ecosia no longer works because of bot detection. Find a way around it.
 - Deal with an issue where sometimes the process can get `Killed` because it uses too much memory.
 - Identify anti bot mechanism pages on other sources (it's only on a few at the moment) so that `xnldorker` can pause to manually respond if the browser is being viewed.
 - Find our what search operators work on which sources and adjust the `--sources` automatically depending on which sources will get the expected results.
 - Add arguments that let you specify a certain time-frame for results which can often be specified with query parameters in the search engine request.
 - Add argument that let you specify a certain Region for results which can often be specified with query parameters in the search engine request.
+
+## Google Custom Search Instructions
+
+Follow these instructions to use the `GoogleCS` source.
+
+### Part 1: Setting up a Google Programmable Search Engine and Getting the CSE-ID
+
+The CSE-ID is a unique identifier for your search engine configuration, referred to as the Chat ID.
+
+#### 1. Navigate to the PSE Platform
+
+* Go to the [Google Programmable Search Engine website](https://programmablesearchengine.google.com/) and sign in with your Google Account.
+
+#### 2. Create a New Search Engine
+
+* Click the **"Add"** or **"Get Started"** button to begin the setup.
+
+#### 3. Configure the Engine
+
+* **Name your search engine:** Provide a descriptive name (e.g., "My App Search").
+* **What to search?:** Enter the domain(s) or URL pattern(s) you wish to index (e.g., `example.com/*`), or select the `Search the entire web` option.
+
+* Click the **"Create"** button.
+
+#### 4. Retrieve the Search Engine ID (CSE-ID)
+
+* After creation, you will be taken to the engine's **All search engines** page.
+* Click the name of the search engine you created.
+* The **Search engine ID** is displayed prominently on this page.
+* **Copy and save this ID.** It is a long alphanumeric string (e.g., `a5b7c9d1e3f5g7h9i1j3k5l7`).
+* Paste this in your `config.yml` file, e.g. `GOOGLE_SEARCH_CHAT_ID: a5b7c9d1e3f5g7h9i1j3k5l7`
+
+
+### Part 2: Creating an API Key in Google Cloud Console
+
+The API key provides secure access to Google's Custom Search JSON API.
+
+#### Step A: Set up a Project and Enable the API
+
+#### 1. Go to Google Cloud Console
+
+* Navigate to the [Google Cloud Console](https://console.cloud.google.com/) and sign in.
+
+#### 2. Select or Create a Project
+
+* Use the project selector dropdown at the top left to select an existing project or create a **"New Project"**.
+
+#### 3. Enable the Custom Search API
+
+* Use the **Search bar** at the top of the console.
+* Search for **"Custom Search API"**.
+* Click on the result and click the **"Enable"** button.
+
+#### Step B: Generate and Secure the API Key
+
+#### 1. Navigate to Credentials
+
+* In the left-hand navigation menu, go to **"APIs and services"** -> **"Credentials"**.
+
+#### 2. Generate the API Key
+
+* Click the **"+ Create Credentials"** button at the top.
+* Select **"API key"** from the dropdown menu.
+* Enter the name you want for your API key, and click **API restrictions** -> **Restrict key**
+* Check the **Custom Search API** option, click **OK** and then click **Create**
+* Copy the value in **Your API key** IMMEDIATELY
+* **Copy and save this key immediately.** and close the window.
+* Paste this in your `config.yml` file, e.g. `GOOGLE_SEARCH_API_KEY: Your_API_Key`
 
 ## And finally...
 
