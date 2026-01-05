@@ -263,11 +263,13 @@ def proxy_worker():
     """
     global proxy_queue, proxy_session, stopProgram
 
+    q = proxy_queue
     while not stopProgram:
         try:
             # Get endpoint from queue with timeout
-            endpoint = proxy_queue.get(timeout=1)
+            endpoint = q.get(timeout=1)
             if endpoint is None:  # Sentinel value to stop thread
+                q.task_done()
                 break
 
             try:
@@ -297,7 +299,7 @@ def proxy_worker():
                         )
                     )
 
-            proxy_queue.task_done()
+            q.task_done()
 
         except queue.Empty:
             continue
@@ -313,7 +315,7 @@ def start_proxy_thread():
     """
     global proxy_queue, proxy_thread, proxy_session
 
-    if not args.forward_proxy:
+    if not args.forward_proxy or (proxy_thread and proxy_thread.is_alive()):
         return
 
     try:
@@ -350,6 +352,17 @@ def stop_proxy_thread():
 
     if proxy_queue and proxy_thread:
         try:
+            # Wait for all endpoints currently in the queue to be processed
+            if not stopProgram and not proxy_queue.empty():
+                if verbose():
+                    writerr(
+                        colored(
+                            "[ Forward Proxy ] Waiting for all endpoints to be sent...",
+                            "cyan",
+                        )
+                    )
+                proxy_queue.join()
+
             # Send sentinel value to stop worker
             proxy_queue.put(None)
             # Wait for thread to finish with timeout
@@ -2944,9 +2957,6 @@ async def savePageContents(source, page):
 async def processInput(dork):
     global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, stopProgram, proxy_sent_endpoints
     try:
-        # Clear proxy sent endpoints for this search
-        proxy_sent_endpoints.clear()
-
         # Start proxy forwarding thread if needed
         start_proxy_thread()
 
@@ -3131,8 +3141,6 @@ async def processInput(dork):
             await browser.close()
         except Exception:
             pass
-        # Stop proxy forwarding thread
-        stop_proxy_thread()
 
 
 async def processOutput():
@@ -3713,6 +3721,9 @@ async def run_main():
 
     except Exception as e:
         writerr(colored("ERROR main 1: " + str(e), "red"))
+    finally:
+        # Stop proxy forwarding thread
+        stop_proxy_thread()
 
     # Show ko-fi link if verbose and not piped
     try:

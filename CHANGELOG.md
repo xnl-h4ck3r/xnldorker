@@ -1,5 +1,13 @@
 ## Changelog
 
+- v3.3
+
+  - Changed
+
+    - BUG FIX: Fixed `[ Forward Proxy ] Worker error: task_done() called too many times` error when using `-rwos` or multiple dorks.
+    - Improved proxy worker thread lifecycle: ensuring only one thread runs and all queued endpoints are processed before normal program exit.
+    - BUG FIX: The unique endpoints sent count in the exit message now correctly shows the total across all search passes (including `-rwos`).
+
 - v3.2
 
   - New
