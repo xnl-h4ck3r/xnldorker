@@ -1,5 +1,12 @@
 ## Changelog
 
+- v3.4
+
+  - Changed
+
+    - When processing a file of dorks as input, results are now written to the output file after each line in the file has been processed, rather than only at the end.
+    - If the `-ow` / `--output-overwrite` argument is passed, it will only overwrite the file for the first dork processed; subsequent dorks will append to the file.
+
 - v3.3
 
   - Changed

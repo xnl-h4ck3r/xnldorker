@@ -3292,6 +3292,19 @@ async def processOutput():
         except Exception as e:
             writerr(colored("ERROR processOutput 3: " + str(e), "red"))
 
+        # Clear the endpoint sets so they don't get processed again if there are multiple dorks
+        duckduckgoEndpoints.clear()
+        bingEndpoints.clear()
+        startpageEndpoints.clear()
+        yahooEndpoints.clear()
+        googleEndpoints.clear()
+        googlecsEndpoints.clear()
+        yandexEndpoints.clear()
+        ecosiaEndpoints.clear()
+        baiduEndpoints.clear()
+        seznamEndpoints.clear()
+        kagiEndpoints.clear()
+
     except Exception as e:
         writerr(colored("ERROR processOutput 1: " + str(e), "red"))
 
@@ -3703,21 +3716,25 @@ async def run_main():
             write(colored("Processing dork: ", "cyan") + colored(inputDork, "white"))
             await processInput(inputDork)
 
-        # If there were some subs found, and the --resubmit-without-subs was passed, then run again with subdomains removed
-        if len(allSubs) > 0 and args.resubmit_without_subs:
-            inputDork = (
-                inputDork
-                + " "
-                + " ".join(["-{}".format(sub) for sub in allSubs if sub])
-            )
-            write(
-                colored("\nResubmitting again for input: ", "magenta")
-                + colored(inputDork, "white")
-            )
-            await processInput(inputDork)
+            # If there were some subs found, and the --resubmit-without-subs was passed, then run again with subdomains removed
+            if len(allSubs) > 0 and args.resubmit_without_subs:
+                inputDork = (
+                    inputDork
+                    + " "
+                    + " ".join(["-{}".format(sub) for sub in allSubs if sub])
+                )
+                write(
+                    colored("\nResubmitting again for input: ", "magenta")
+                    + colored(inputDork, "white")
+                )
+                await processInput(inputDork)
 
-        # Output the saved urls with parameters
-        await processOutput()
+            # Output the saved urls with parameters
+            await processOutput()
+
+            # If output overwrite was passed, then it should only overwrite for the first line of the file, not subsequent ones
+            if args.output_overwrite:
+                args.output_overwrite = False
 
     except Exception as e:
         writerr(colored("ERROR main 1: " + str(e), "red"))
