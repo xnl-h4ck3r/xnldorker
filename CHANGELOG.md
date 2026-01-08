@@ -1,5 +1,13 @@
 ## Changelog
 
+- v4.0
+
+  - New
+
+    - Add DuckDuckGo Lite (`duckgolite`) as a new search source. This uses the text-only version of DuckDuckGo at `lite.duckduckgo.com/lite/` which may be less likely to trigger bot detection. 
+    - Add a check for the text `Unfortunately, bots use DuckDuckGo` to determine if the page is a bot detection page for existing DuckDuckGo source and also the new DuckGoLite source.
+    - Check for `Error getting results` at start of DuckDuckGo and Lite because that is part of bot protection if the browser is not shown.
+
 - v3.4
 
   - Changed

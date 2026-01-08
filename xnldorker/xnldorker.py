@@ -36,6 +36,7 @@ except Exception:
 # Available sources to search
 SOURCES = [
     "duckduckgo",
+    "duckgolite",
     "bing",
     "startpage",
     "yahoo",
@@ -84,6 +85,7 @@ stopProgram = False
 stopProgramCount = 0
 inputDork = ""
 duckduckgoEndpoints = set()
+duckgoliteEndpoints = set()
 bingEndpoints = set()
 yahooEndpoints = set()
 googleEndpoints = set()
@@ -692,6 +694,14 @@ async def getDuckDuckGo(context, dork, semaphore):
         captcha = await page.query_selector(
             "#anomaly-modal__modal.anomaly-modal__modal"
         )
+        # Also check for bot detection text
+        if not captcha:
+            page_content = await page.content()
+            if (
+                "unfortunately, bots use duckduckgo" in page_content.lower()
+                or "error getting results" in page_content.lower()
+            ):
+                captcha = True
         if captcha:
             if args.show_browser:
                 writerr(
@@ -722,6 +732,14 @@ async def getDuckDuckGo(context, dork, semaphore):
         captcha = await page.query_selector(
             "#anomaly-modal__modal.anomaly-modal__modal"
         )
+        # Also check for bot detection text
+        if not captcha:
+            page_content = await page.content()
+            if (
+                "unfortunately, bots use duckduckgo" in page_content.lower()
+                or "error getting results" in page_content.lower()
+            ):
+                captcha = True
         if captcha:
             writerr(colored("[ DuckDuckGo ] Failed to complete reCAPTCHA", "red"))
             return set(endpoints)
@@ -808,6 +826,210 @@ async def getDuckDuckGo(context, dork, semaphore):
         # If debug mode then save a copy of the page
         if args.debug and page is not None:
             await savePageContents("DuckDuckGo", page)
+        return set(endpoints)
+    finally:
+        try:
+            # Close page/tab unless in debug mode
+            if page and not args.debug:
+                await page.close()
+            # Close context (window) in windows mode unless in debug mode
+            if should_close_context and source_context and not args.debug:
+                await source_context.close()
+            semaphore.release()
+        except Exception:
+            pass
+
+
+async def getResultsDuckGoLite(page, endpoints):
+    global allSubs
+    try:
+        content = await page.content()
+        soup = BeautifulSoup(content, "html.parser")
+
+        # Find all links with class "result-link" - these are the actual search result links
+        a_tags = soup.find_all("a", class_="result-link")
+        for a in a_tags:
+            href = a.get("href")
+            # If the link starts with "//duckduckgo.com/l/?uddg=" then remove that and then URL decode it
+            if href.startswith("//duckduckgo.com/l/?uddg="):
+                href = href[25:]
+                href = unquote(href)
+            if (
+                href
+                and href.startswith("http")
+                and not re.match(
+                    r"^https?:\/\/([\w-]+\.)*duckduckgo\.[^\/\.]{2,}", href
+                )
+            ):
+                endpoint = href.strip()
+                endpoints.append(endpoint)
+                # Send to forward proxy in background thread
+                send_to_proxy(endpoint)
+                # If the same search is going to be resubmitted without subs, get the subdomain
+                if args.resubmit_without_subs:
+                    allSubs.add(getSubdomain(endpoint))
+        return endpoints
+    except Exception as e:
+        writerr(colored("ERROR getResultsDuckGoLite 1: " + str(e), "red"))
+        return endpoints
+
+
+async def getDuckGoLite(context, dork, semaphore):
+    """
+    Search DuckDuckGo Lite (text-only version) and extract all result links.
+    Paginates by clicking "Next Page" button until it no longer exists.
+    """
+    global stopProgram
+    source_context = None
+    should_close_context = False
+    try:
+        endpoints = []
+        page = None
+        await semaphore.acquire()
+
+        # Get context for this source (new context in windows mode, shared in tabs mode)
+        source_context, should_close_context = await get_or_create_context(context)
+
+        page = await source_context.new_page()
+        await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
+
+        # Add small random delay to appear more human-like
+        await asyncio.sleep(random.uniform(0.5, 1.5))
+
+        if verbose():
+            writerr(colored("[ DuckGoLite ] Starting...", "green"))
+
+        # Navigate to DuckDuckGo Lite
+        await page.goto(
+            f"https://lite.duckduckgo.com/lite/?q={dork}",
+            timeout=args.timeout * 1000,
+        )
+        pageNo = 1
+
+        try:
+            # Wait for the search results to be fully loaded
+            await page.wait_for_load_state("networkidle", timeout=args.timeout * 1000)
+        except Exception as wait_e:
+            if "Target page, context or browser has been closed" in str(wait_e):
+                raise
+            pass
+
+        # Function to check if Next Page button exists and click it
+        async def click_next_page():
+            # The Next button is an input submit button inside a form
+            next_button = await page.query_selector('input.navbutton[value*="Next"]')
+            if next_button:
+                await next_button.click()
+                await page.wait_for_load_state(
+                    "networkidle", timeout=args.timeout * 1000
+                )
+                return True
+            return False
+
+        # Loop: get endpoints from current page, then try to go to next page
+        pageNo = 1
+        while True:
+            if stopProgram:
+                break
+
+            # If captcha is shown then allow time to submit it
+            captcha = await page.query_selector(
+                "#anomaly-modal__modal.anomaly-modal__modal"
+            )
+            # Also check for bot detection text
+            if not captcha:
+                page_content = await page.content()
+                if (
+                    "unfortunately, bots use duckduckgo" in page_content.lower()
+                    or "error getting results" in page_content.lower()
+                ):
+                    captcha = True
+            if captcha:
+                if args.show_browser:
+                    writerr(
+                        colored(
+                            f'[ DuckGoLite ] reCAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "duckgolite" and press ENTER...',
+                            "yellow",
+                        )
+                    )
+                    await wait_for_word_or_sleep("duckgolite", args.antibot_timeout)
+                    writerr(colored("[ DuckGoLite ] Resuming...", "green"))
+                else:
+                    writerr(
+                        colored(
+                            "[ DuckGoLite ] reCAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                            "red",
+                        )
+                    )
+                return set(endpoints)
+
+            # Get endpoints from current page
+            if vverbose():
+                writerr(
+                    colored(
+                        f"[ DuckGoLite ] Getting links from page {pageNo}",
+                        "green",
+                        attrs=["dark"],
+                    )
+                )
+            endpoints = await getResultsDuckGoLite(page, endpoints)
+
+            # Try to click Next Page button
+            if await click_next_page():
+                pageNo += 1
+                if vverbose():
+                    writerr(
+                        colored(
+                            f'[ DuckGoLite ] Clicked "Next Page" button, now on page {pageNo}',
+                            "green",
+                            attrs=["dark"],
+                        )
+                    )
+            else:
+                # No more Next button, we're done
+                break
+
+        setEndpoints = set(endpoints)
+        if verbose():
+            noOfEndpoints = len(setEndpoints)
+            if noOfEndpoints == 0 and args.debug and page is not None:
+                await savePageContents("DuckGoLite", page)
+            writerr(
+                colored(
+                    f"[ DuckGoLite ] Complete! {str(noOfEndpoints)} endpoints found",
+                    "green",
+                )
+            )
+        return setEndpoints
+
+    except Exception as e:
+        noOfEndpoints = len(set(endpoints))
+        if "net::ERR_TIMED_OUT" in str(e) or "Timeout" in str(e):
+            writerr(
+                colored(
+                    f"[ DuckGoLite ] Page timed out - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
+        elif "net::ERR_ABORTED" in str(
+            e
+        ) or "Target page, context or browser has been closed" in str(e):
+            writerr(
+                colored(
+                    f"[ DuckGoLite ] Search aborted - got {str(noOfEndpoints)} results",
+                    "red",
+                )
+            )
+        else:
+            writerr(colored("[ DuckGoLite ] ERROR getDuckGoLite 1: " + str(e), "red"))
+            # Check if this looks like a proxy type error and show helpful hint
+            if args.request_proxy and detect_proxy_type_error(
+                args.request_proxy, str(e)
+            ):
+                show_proxy_usage_hint(args.request_proxy)
+        # If debug mode then save a copy of the page
+        if args.debug and page is not None:
+            await savePageContents("DuckGoLite", page)
         return set(endpoints)
     finally:
         try:
@@ -2955,7 +3177,7 @@ async def savePageContents(source, page):
 
 
 async def processInput(dork):
-    global browser, sourcesToProcess, duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, stopProgram, proxy_sent_endpoints
+    global browser, sourcesToProcess, duckduckgoEndpoints, duckgoliteEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, stopProgram, proxy_sent_endpoints
     try:
         # Start proxy forwarding thread if needed
         start_proxy_thread()
@@ -3061,6 +3283,7 @@ async def processInput(dork):
             # Map source names to their coroutine functions
             source_map = {
                 "duckduckgo": getDuckDuckGo,
+                "duckgolite": getDuckGoLite,
                 "bing": getBing,
                 "startpage": getStartpage,
                 "yahoo": getYahoo,
@@ -3097,6 +3320,8 @@ async def processInput(dork):
                 # Update the endpoint lists as well
                 if source == "duckduckgo":
                     duckduckgoEndpoints.update(result)
+                elif source == "duckgolite":
+                    duckgoliteEndpoints.update(result)
                 elif source == "bing":
                     bingEndpoints.update(result)
                 elif source == "startpage":
@@ -3144,7 +3369,7 @@ async def processInput(dork):
 
 
 async def processOutput():
-    global duckduckgoEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, sourcesToProcess
+    global duckduckgoEndpoints, duckgoliteEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, sourcesToProcess
     try:
         allEndpoints = set()
 
@@ -3153,6 +3378,10 @@ async def processOutput():
             if duckduckgoEndpoints:
                 allEndpoints.update(
                     f"[ DuckDuckGo ] {endpoint}" for endpoint in duckduckgoEndpoints
+                )
+            if duckgoliteEndpoints:
+                allEndpoints.update(
+                    f"[ DuckGoLite ] {endpoint}" for endpoint in duckgoliteEndpoints
                 )
             if bingEndpoints:
                 allEndpoints.update(
@@ -3197,6 +3426,8 @@ async def processOutput():
         else:
             if duckduckgoEndpoints:
                 allEndpoints |= duckduckgoEndpoints
+            if duckgoliteEndpoints:
+                allEndpoints |= duckgoliteEndpoints
             if bingEndpoints:
                 allEndpoints |= bingEndpoints
             if startpageEndpoints:
@@ -3294,6 +3525,7 @@ async def processOutput():
 
         # Clear the endpoint sets so they don't get processed again if there are multiple dorks
         duckduckgoEndpoints.clear()
+        duckgoliteEndpoints.clear()
         bingEndpoints.clear()
         startpageEndpoints.clear()
         yahooEndpoints.clear()
