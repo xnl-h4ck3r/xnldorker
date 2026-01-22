@@ -1,5 +1,18 @@
 ## Changelog
 
+- v4.1
+
+  - New
+
+    - Check for `Seznam` Captcha page
+    - If `-rwos` / `--resubmit-without-subs` arg is passed, don't process `Seznam` the second time around because it does not recognise the syntax of removed words with `-` so just displays all the same results again.
+    - If Kagi site says `Searches will be paused until you upgrade to a paid subscription` then it will be reported to the user and skipped.
+
+  - Changed
+
+    - Set `Bing` and `Ecosia` sources as auto excluded because these don't work right now. They may work for someone in a different region or something for some reason, so they can be included with `--source` if required.
+    - BUG FIX: Remove a debug print line from Yandex processing.
+
 - v4.0
 
   - New

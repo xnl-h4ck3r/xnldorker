@@ -2127,7 +2127,6 @@ def extractYandexEndpoints(soup):
         result_links = soup.find_all("a", class_=re.compile(".*organic__url.*"))
         for link in result_links:
             href = link.get("href")
-            print(href)
             if (
                 href
                 and href.startswith("http")
@@ -2814,103 +2813,155 @@ async def getSeznam(context, dork, semaphore):
     should_close_context = False
     page = None
     endpoints = []
+    allSubs
 
     try:
-        await semaphore.acquire()
-
-        # Get context for this source (new context in windows mode, shared in tabs mode)
-        source_context, should_close_context = await get_or_create_context(context)
-
-        page = await source_context.new_page()
-        await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
-
-        if verbose():
-            writerr(colored("[ Seznam ] Starting...", "green"))
-
-        # Go to search page
-        await page.goto(
-            f"https://search.seznam.cz/?q={dork}", timeout=args.timeout * 1000
-        )
-
-        pageNo = 1
-
-        try:
-            # Wait for search results to appear instead of networkidle
-            # This is much faster than waiting for all network activity to stop
-            await page.wait_for_selector('a[tabindex="0"]', timeout=args.timeout * 1000)
-            # Add a small delay to ensure results are fully rendered
-            await asyncio.sleep(0.5)
-        except Exception as wait_e:
-            if "Target page, context or browser has been closed" in str(wait_e):
-                raise
-            # If selector not found, try networkidle as fallback
-            try:
-                await page.wait_for_load_state(
-                    "networkidle", timeout=args.timeout * 1000
+        # Don't run for Seznam again if running again for subs because it just displays the same results
+        if len(allSubs) != 0 and verbose():
+            writerr(
+                colored(
+                    "[ Seznam ] It doesn't support the '-' syntax, so skipping.",
+                    "yellow",
                 )
-            except Exception:
-                pass
+            )
+        else:
 
-        # Carry on if it doesn't say "Bohužel jsem nic nenašel" (Unfortunately I didn't find anything)
-        text = await page.text_content("body")
-        if text and "Bohužel jsem nic nenašel" not in text:
+            await semaphore.acquire()
+
+            # Get context for this source (new context in windows mode, shared in tabs mode)
+            source_context, should_close_context = await get_or_create_context(context)
+
+            page = await source_context.new_page()
+            await page.set_extra_http_headers({"User-Agent": DEFAULT_USER_AGENT})
+
+            if verbose():
+                writerr(colored("[ Seznam ] Starting...", "green"))
+
+            # Go to search page
+            await page.goto(
+                f"https://search.seznam.cz/?q={dork}", timeout=args.timeout * 1000
+            )
+
+            # First check: is there a "nothing found" message? Exit immediately if so
+            text = await page.text_content("body")
+            if text and "Bohužel jsem nic nenašel" in text:
+                if verbose():
+                    writerr(colored("[ Seznam ] No results found", "yellow"))
+                return set()  # Exit immediately, no scraping needed
+
+            # Check if bot detection captcha is displayed
+            if "Ujistěte mě, že nejste robot" in page.url:
+                if args.show_browser:
+                    writerr(
+                        colored(
+                            f'[ Seznam ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "seznam" and press ENTER...',
+                            "yellow",
+                        )
+                    )
+                    await wait_for_word_or_sleep("seznam", args.antibot_timeout)
+                    writerr(colored("[ Seznam ] Resuming...", "green"))
+                else:
+                    writerr(
+                        colored(
+                            "[ Seznam ] CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                            "red",
+                        )
+                    )
+                    return set(endpoints)
+
+            # Wait for search results to appear
+            try:
+                await page.wait_for_selector(
+                    'a[tabindex="0"]', timeout=args.timeout * 1000
+                )
+                await asyncio.sleep(0.5)
+            except Exception as wait_e:
+                if "Target page, context or browser has been closed" in str(wait_e):
+                    raise
+                # Fallback: wait for network idle if selector fails
+                try:
+                    await page.wait_for_load_state(
+                        "networkidle", timeout=args.timeout * 1000
+                    )
+                except Exception:
+                    pass
 
             if vverbose():
                 writerr(
                     colored(
-                        "[ Seznam ] Getting endpoints from page " + str(pageNo),
+                        "[ Seznam ] Getting endpoints from page 1",
                         "green",
                         attrs=["dark"],
                     )
                 )
 
-            # Get the results so far, just in case it ends early
+            # Get the results from the first page
             endpoints = await getResultsSeznam(page, endpoints)
+            pageNo = 1
 
-            # Main loop to keep navigating to next pages until there's no "Next page" link
+            # Main loop: navigate through "Next page" links
             while True:
                 if stopProgram:
                     break
-                # Find the link with the title "Další strana" (Next page)
-                if await page.query_selector('a[title="Další strana"]'):
-                    await page.click('a[title="Další strana"]')
-                    try:
-                        # Wait for new results to appear instead of networkidle
-                        await page.wait_for_selector(
-                            'a[tabindex="0"]', timeout=args.timeout * 1000
-                        )
-                        await asyncio.sleep(0.5)
-                    except Exception:
-                        pass
 
-                    pageNo += 1
-                    if vverbose():
+                # Check if bot detection captcha is displayed
+                if "captcha" in page.url:
+                    if args.show_browser:
                         writerr(
                             colored(
-                                "[ Seznam ] Getting endpoints from page " + str(pageNo),
-                                "green",
-                                attrs=["dark"],
+                                f'[ Seznam ] CAPTCHA needs responding to. Process will resume in {args.antibot_timeout} seconds, or when you type "seznam" and press ENTER...',
+                                "yellow",
                             )
                         )
+                        await wait_for_word_or_sleep("seznam", args.antibot_timeout)
+                        writerr(colored("[ Seznam ] Resuming...", "green"))
+                    else:
+                        writerr(
+                            colored(
+                                "[ Seznam ] CAPTCHA needed responding to. Consider using option -sb / --show-browser",
+                                "red",
+                            )
+                        )
+                        return set(endpoints)
 
-                    # Get all the results
-                    endpoints = await getResultsSeznam(page, endpoints)
-                else:
-                    # No "Next page" link found, exit the loop
+                next_page = await page.query_selector('a[title="Další strana"]')
+                if not next_page:
                     break
 
-        setEndpoints = set(endpoints)
-        if verbose():
-            noOfEndpoints = len(setEndpoints)
-            if noOfEndpoints == 0 and args.debug and page is not None:
-                await savePageContents("Seznam", page)
-            writerr(
-                colored(
-                    f"[ Seznam ] Complete! {str(noOfEndpoints)} endpoints found",
-                    "green",
+                await next_page.click()
+                try:
+                    await page.wait_for_selector(
+                        'a[tabindex="0"]', timeout=args.timeout * 1000
+                    )
+                    await asyncio.sleep(0.5)
+                except Exception:
+                    pass
+
+                pageNo += 1
+                if vverbose():
+                    writerr(
+                        colored(
+                            f"[ Seznam ] Getting endpoints from page {pageNo}",
+                            "green",
+                            attrs=["dark"],
+                        )
+                    )
+
+                endpoints = await getResultsSeznam(page, endpoints)
+
+            # Return unique endpoints
+            setEndpoints = set(endpoints)
+            if verbose():
+                noOfEndpoints = len(setEndpoints)
+                if noOfEndpoints == 0 and args.debug and page is not None:
+                    await savePageContents("Seznam", page)
+                writerr(
+                    colored(
+                        f"[ Seznam ] Complete! {noOfEndpoints} endpoints found", "green"
+                    )
                 )
-            )
-        return setEndpoints
+
+            return setEndpoints
 
     except Exception as e:
         noOfEndpoints = len(set(endpoints))
@@ -2929,7 +2980,7 @@ async def getSeznam(context, dork, semaphore):
                 )
             )
         else:
-            writerr(colored("[ Seznam ] ERROR getSeznam: " + str(e), "red"))
+            writerr(colored(f"[ Seznam ] ERROR getSeznam: {e}", "red"))
 
         if args.debug and page is not None:
             await savePageContents("Seznam", page)
@@ -3034,6 +3085,20 @@ async def getKagi(context, dork, semaphore):
 
             # Go to Kagi URL
             await page.goto(base_url, timeout=args.timeout * 1000)
+
+            # Check for "Searches will be paused until you upgrade to a paid subscription" and stop
+            content = await page.content()
+            if (
+                "Searches will be paused until you upgrade to a paid subscription"
+                in content
+            ):
+                writerr(
+                    colored(
+                        "[ Kagi ] Site says 'Searches will be paused until you upgrade to a paid subscription' so skipping.",
+                        "yellow",
+                    )
+                )
+                break
 
             # Enter the dork into the field
             await page.fill("#searchBar", dork)
@@ -3735,9 +3800,10 @@ async def run_main():
         "-es",
         "--exclude-sources",
         action="store",
-        help="Specific sources to exclude searching (-s google,startpage). Use -ls to display all available sources.",
+        help="Specific sources to exclude searching (-s google,startpage). Use -ls to display all available sources. If the same source is included with --sources and --exclude-sources, it will be included.",
         type=argcheckSources,
         metavar="string[]",
+        default="bing,ecosia",
     )
     parser.add_argument(
         "-cs",
@@ -3788,7 +3854,7 @@ async def run_main():
         "-rwos",
         "--resubmit-without-subs",
         action="store_true",
-        help="After the initial search, search again but exclude all subs found previously to get more links.",
+        help="After the initial search, search again but exclude all subs found previously to get more links. Ths excludes Seznam source because it doesn't recognise that syntax.",
     )
     parser.add_argument(
         "-fp",
@@ -3846,17 +3912,14 @@ async def run_main():
                 )
                 sys.exit()
 
-        # Determine the sources to process
-        if args.sources is None:
-            sourcesToProcess = SOURCES
-        else:
+        # Determine the sources to process. If a source is passed in --source and --exclude-source, it will be included
+        if args.sources:
+            # If --sources is specified, only use these (ignore excludes)
             sourcesToProcess = args.sources.split(",")
-        if args.exclude_sources is not None:
-            sourcesToProcess = [
-                source
-                for source in sourcesToProcess
-                if source not in args.exclude_sources
-            ]
+        else:
+            # Otherwise, start with all SOURCES and remove any excluded ones
+            excludes = args.exclude_sources.split(",") if args.exclude_sources else []
+            sourcesToProcess = [s for s in SOURCES if s not in excludes]
 
         # Get the input dork, depending on the input type
         dorks = []
