@@ -53,7 +53,7 @@ setup(
     install_requires=[
         "termcolor",
         "requests",
-        "asyncio",
+        "PyYAML",
         "beautifulsoup4",
         "playwright",
         "tldextract",

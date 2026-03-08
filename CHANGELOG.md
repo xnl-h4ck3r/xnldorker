@@ -1,5 +1,15 @@
 ## Changelog
 
+- v4.2
+
+  - New
+    - If the `config.yml` file is not found in the expected config directory (e.g. `~/.config/xnldorker/` on Linux or `%APPDATA%/xnldorker/` on Windows), it will be automatically created with default values. This fixes the issue where installing with `pipx` did not create the `config.yml` file.
+    - Add `LICENSE` file.
+  
+  - Changed
+    - Remove `asyncio` from `install_requires` in `setup.py` because it is a built-in module and does not need to be installed.
+    - Add `PyYAML` to `install_requires` in `setup.py` because it is used to read the `config.yml` file.
+    
 - v4.1
 
   - New

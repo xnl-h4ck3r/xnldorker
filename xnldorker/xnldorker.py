@@ -133,7 +133,8 @@ def writerr(text=""):
 
 def getConfig():
     """
-    Try to get the values from the config file, otherwise use the defaults
+    Try to get the values from the config file, otherwise use the defaults.
+    If the config file doesn't exist, create it with default values.
     """
     global KAGI_SESSION_LINK, GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_CHAT_ID
     try:
@@ -167,6 +168,32 @@ def getConfig():
                 configPath = "config.yml"
             else:
                 configPath = Path(xnldorkerPath / "config.yml")
+
+            # If the config file doesn't exist, create it with default values
+            if not os.path.isfile(configPath):
+                try:
+                    os.makedirs(xnldorkerPath, exist_ok=True)
+                    defaultConfig = """# Get your KAGI_SESSION_LINK from https://kagi.com/settings/user_details and paste below, with a single space after the colon
+KAGI_SESSION_LINK: 
+GOOGLE_SEARCH_API_KEY: 
+GOOGLE_SEARCH_CHAT_ID: """
+                    with open(configPath, "w") as f:
+                        f.write(defaultConfig)
+                    writerr(
+                        colored(
+                            "config.yml did not exist so has been created at "
+                            + str(configPath),
+                            "cyan",
+                        )
+                    )
+                except Exception as e:
+                    writerr(
+                        colored(
+                            "WARNING: Failed to create config.yml: " + str(e),
+                            "yellow",
+                        )
+                    )
+
             config = yaml.safe_load(open(configPath))
 
             try:
@@ -3763,6 +3790,11 @@ async def run_main():
     # Tell Python to run the handler() function when SIGINT is received
     signal(SIGINT, handler)
 
+    # Get the config settings from the config.yml file
+    # This is called before argument parsing so that the config file is
+    # created even if -h is passed or no arguments are given
+    getConfig()
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="xnldorker - by @Xnl-h4ck3r: Gather results of dorks across a number of search engines."
@@ -3896,9 +3928,6 @@ async def run_main():
             showBanner()
         write(colored("These are the available sources: ", "green") + str(SOURCES))
         sys.exit()
-
-    # Get the config settings from the config.yml file
-    getConfig()
 
     try:
         # If no input was given, raise an error
