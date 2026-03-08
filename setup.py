@@ -53,7 +53,6 @@ setup(
     install_requires=[
         "termcolor",
         "requests",
-        "asyncio",
         "beautifulsoup4",
         "playwright",
         "tldextract",
@@ -78,3 +77,4 @@ else:
         + target_directory
         + "/config.yml has been created.\n\033[0m"
     )
+
