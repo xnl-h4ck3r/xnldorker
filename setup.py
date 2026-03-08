@@ -56,6 +56,7 @@ setup(
         "asyncio",
         "beautifulsoup4",
         "playwright",
+        "PyYAML",
         "tldextract",
         "urllib3",
     ],
@@ -78,3 +79,4 @@ else:
         + target_directory
         + "/config.yml has been created.\n\033[0m"
     )
+
