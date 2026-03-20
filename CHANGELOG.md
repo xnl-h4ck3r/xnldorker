@@ -1,5 +1,14 @@
 ## Changelog
 
+- v4.3
+
+  - Changed
+    - BUG FIX: Seznam CAPTCHA detection now checks all pages, not just the first page.
+    - BUG FIX: DuckGoLite would exit immediately after CAPTCHA was solved instead of continuing to get links.
+    - BUG FIX: When the dork contains `site:`, results are now filtered to only include URLs matching the target domain or its subdomains. Previously, search engine navigation links (e.g. Baidu image search) could leak into results.
+    - BUG FIX: DuckDuckGo would time out instead of exiting early when the page shows `No more results found for`.
+    - Seznam now shows `Complete! 0 endpoints found` in green when no results are found, consistent with all other sources.
+
 - v4.2
 
   - New

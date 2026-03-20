@@ -771,6 +771,13 @@ async def getDuckDuckGo(context, dork, semaphore):
             writerr(colored("[ DuckDuckGo ] Failed to complete reCAPTCHA", "red"))
             return set(endpoints)
 
+        # Check if there are no results
+        page_content = await page.content()
+        if "no more results found for" in page_content.lower():
+            if verbose():
+                writerr(colored("[ DuckDuckGo ] Complete! 0 endpoints found", "green"))
+            return set(endpoints)
+
         # Function to check if the button is disabled and enable it if necessary
         async def enable_more_results():
             more_results_button = await page.query_selector("#more-results")
@@ -988,7 +995,7 @@ async def getDuckGoLite(context, dork, semaphore):
                             "red",
                         )
                     )
-                return set(endpoints)
+                    return set(endpoints)
 
             # Get endpoints from current page
             if vverbose():
@@ -2873,11 +2880,11 @@ async def getSeznam(context, dork, semaphore):
             text = await page.text_content("body")
             if text and "Bohužel jsem nic nenašel" in text:
                 if verbose():
-                    writerr(colored("[ Seznam ] No results found", "yellow"))
+                    writerr(colored("[ Seznam ] Complete! 0 endpoints found", "green"))
                 return set()  # Exit immediately, no scraping needed
 
             # Check if bot detection captcha is displayed
-            if "Ujistěte mě, že nejste robot" in page.url:
+            if "captcha" in page.url or "Ujistěte mě, že nejste robot" in page.url:
                 if args.show_browser:
                     writerr(
                         colored(
@@ -2932,7 +2939,7 @@ async def getSeznam(context, dork, semaphore):
                     break
 
                 # Check if bot detection captcha is displayed
-                if "captcha" in page.url:
+                if "captcha" in page.url or "Ujistěte mě, že nejste robot" in page.url:
                     if args.show_browser:
                         writerr(
                             colored(
@@ -3461,7 +3468,7 @@ async def processInput(dork):
 
 
 async def processOutput():
-    global duckduckgoEndpoints, duckgoliteEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, sourcesToProcess
+    global duckduckgoEndpoints, duckgoliteEndpoints, bingEndpoints, startpageEndpoints, yahooEndpoints, googleEndpoints, googlecsEndpoints, yandexEndpoints, ecosiaEndpoints, baiduEndpoints, seznamEndpoints, kagiEndpoints, sourcesToProcess, inputDork
     try:
         allEndpoints = set()
 
@@ -3540,6 +3547,34 @@ async def processOutput():
                 allEndpoints |= kagiEndpoints
             if googlecsEndpoints:
                 allEndpoints |= googlecsEndpoints
+
+        # If the dork contains "site:", filter endpoints to only include URLs matching the target domain or its subdomains
+        site_match = re.search(r"site:(\S+)", inputDork, re.IGNORECASE)
+        if site_match:
+            site_domain = site_match.group(1).lower().rstrip(".")
+            filtered = set()
+            for endpoint in allEndpoints:
+                # If --output-sources is used, the endpoint has a "[ Source ] " prefix
+                url_to_check = endpoint
+                if args.output_sources and "] " in endpoint:
+                    url_to_check = endpoint.split("] ", 1)[1]
+                try:
+                    host = urlparse(url_to_check).hostname
+                    if host:
+                        host = host.lower().rstrip(".")
+                        if host == site_domain or host.endswith("." + site_domain):
+                            filtered.add(endpoint)
+                except Exception:
+                    pass
+            removed = len(allEndpoints) - len(filtered)
+            if removed > 0 and vverbose():
+                writerr(
+                    colored(
+                        f"Filtered out {removed} endpoint(s) not matching domain {site_domain}",
+                        "yellow",
+                    )
+                )
+            allEndpoints = filtered
 
         if verbose() and sys.stdin.isatty():
             writerr(
